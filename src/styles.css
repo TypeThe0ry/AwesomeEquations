@@ -35,4 +35,4 @@ button { font: inherit; color: inherit; }
 .trash:hover { background: #ebe7df; }
 .trash:focus-visible { outline: 1px solid #7d756b; outline-offset: 3px; }
 @media (max-width: 700px) { .palette { right: 8px; padding: 3px 4px 7px; border-radius: 0 0 15px 15px; } .trash { right: 12px; bottom: 12px; } }
-@media (max-height: 470px) { :root { --palette-row: calc(72dvh / 9); --palette-font: min(2.7vw, 6dvh); --palette-width: min(18.2vw, 38dvh); } }
+@media (max-height: 470px) { :root { --palette-row: calc(72dvh / 10); --palette-font: min(2.7vw, 6dvh); --palette-width: min(18.2vw, 38dvh); } }
