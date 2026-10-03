@@ -15,7 +15,8 @@ button { font: inherit; color: inherit; }
 .sandbox::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .08; background-image: radial-gradient(#bcb6ad .45px, transparent .45px); background-size: 7px 7px; }
 .effects { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
 .floor { position: absolute; z-index: 0; left: 0; right: 0; top: 84%; height: 2px; background: #77736b; box-shadow: 0 1px 1px #d2cec5; pointer-events: none; }
-.formula { position: absolute; z-index: 2; display: flex; width: max-content; transform: translate(-50%, -50%); font-size: clamp(52px, 5vw, 100px); font-style: italic; font-weight: 400; line-height: 1; letter-spacing: -.035em; white-space: nowrap; cursor: grab; touch-action: none; }
+.formula { position: absolute; z-index: 2; display: flex; width: max-content; transform: translate(-50%, -50%); font-size: clamp(56px, 10vw, 110px); font-style: italic; font-weight: 400; line-height: 1; letter-spacing: -.035em; white-space: nowrap; cursor: grab; touch-action: none; }
+.formula.invalid { color: #b34a43; }
 .formula.held { z-index: 8; cursor: grabbing; }
 .gravity-formula { display: inline-flex; align-items: center; gap: .06em; }
 .fraction { display: inline-flex; flex-direction: column; align-items: stretch; text-align: center; line-height: .92; font-size: .92em; margin-left: .08em; }
