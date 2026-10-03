@@ -7,6 +7,7 @@ const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'x', 't', 'W', 'P', 'p', 'E', 'k'
 const FONT = 76
 const MIN_MAGNITUDE = 28
 const MAX_MAGNITUDE = 360
+const GRAVITY_STRENGTH = 12_000_000
 
 const clamp = (number, min, max) => Math.max(min, Math.min(max, number))
 const normalize = (text) => text.replaceAll('−', '-').replace(/\s/g, '')
@@ -15,13 +16,49 @@ const glyphUnits = (text) => [...text].reduce((sum, glyph) => sum + (/[mMwW]/.te
 const glyphWidth = (text, fontSize = FONT) => glyphUnits(text) * fontSize
 
 function kindFor(text) {
-  const value = normalize(text)
+  const value = normalize(text).replace(/^1\/2/, '½')
   if (/^F=GMm\/[rR](²|\^2)$/.test(value)) return 'gravity'
   if (value === 'F=ma') return 'newton'
   if (value === 'F=-kx' || value === 'F=-kx-cv') return 'spring'
-  if (value === 'F=mg' || value === 'F=qE' || value === 'V=IR' || value === 'P=VI' || value === 'Q=mcT' || value === 'E=hf') return 'law'
+  if (value === '½ke' || value === '½ke²' || value === '½ke^2') return 'springEnergy'
+  if (value === 'F=mg') return 'weight'
+  if (value === 'F=qE') return 'electric'
+  if (value === 'V=IR' || value === 'P=VI' || value === 'Q=mcT' || value === 'E=hf') return 'law'
   if (value.length <= 1 || ['mg', 'GMm', 'kx', 'cv', 'qE', 'IR', 'VI', 'mcT', 'hf'].includes(value)) return 'letter'
   return 'invalid'
+}
+
+function canonicalFormula(text) {
+  const value = normalize(text)
+  if (value === 'Fma' || (value.includes('F') && value.includes('m') && value.includes('a') && value.length <= 3)) return 'F=ma'
+  if (value === 'Fmg' || (value.includes('F') && value.includes('m') && value.includes('g') && value.length <= 3)) return 'F=mg'
+  if (value === 'Fkx' || (value.includes('F') && value.includes('k') && value.includes('x') && value.length <= 3)) return 'F=−kx'
+  if (value === 'FqE' || (value.includes('F') && value.includes('q') && value.includes('E') && value.length <= 3)) return 'F=qE'
+  if ((value === 'FGMmr' || value === 'FGMmR') || (value.includes('F') && value.includes('G') && value.includes('M') && value.includes('m') && (value.includes('r') || value.includes('R')))) return 'F=GMm/r²'
+  if (value.length === 3 && value.includes('½') && value.includes('k') && (value.includes('e') || value.includes('E'))) return '½ke²'
+  return text
+}
+
+const isSpringSource = (item) => item.kind === 'spring' || item.kind === 'springEnergy'
+
+function springAcceleration(item, spring) {
+  const dx = spring.x - item.x
+  const dy = spring.y - item.y
+  const distance = Math.max(Math.hypot(dx, dy), 1)
+  const restLength = item.springRestLength ?? 100
+  const extension = distance - restLength
+  const strength = extension * 7
+  return {
+    ax: dx / distance * strength - item.vx * .18,
+    ay: dy / distance * strength - item.vy * .18,
+  }
+}
+
+function forceDirection(item) {
+  if (item.kind === 'weight') return { x: 0, y: 1 }
+  if (item.kind === 'electric') return { x: 1, y: 0 }
+  if (item.kind === 'newton') return { x: -1, y: 0 }
+  return { x: -1, y: 0 }
 }
 
 function formulaMetrics(text, fontSize) {
@@ -35,18 +72,20 @@ function formulaMetrics(text, fontSize) {
 
 function arrowGeometry(item) {
   const speed = Math.hypot(item.vx, item.vy)
-  const directionX = speed > 5 ? item.vx / speed : -1
-  const directionY = speed > 5 ? item.vy / speed : 0
-  const edge = item.width / 2 + 18
+  const fallback = forceDirection(item)
+  const directionX = speed > 5 ? item.vx / speed : fallback.x
+  const directionY = speed > 5 ? item.vy / speed : fallback.y
+  const edge = Math.abs(directionX) * item.width / 2 + Math.abs(directionY) * item.height / 2 + 18
   const startX = item.x + directionX * edge
-  const startY = item.y + directionY * Math.min(item.height * .16, 16)
+  const startY = item.y + directionY * edge
   return {
     directionX,
     directionY,
+    edge,
     startX,
     startY,
-    endX: item.x + directionX * (edge + (item.magnitude ?? 100)),
-    endY: item.y + directionY * (Math.min(item.height * .16, 16) + (item.magnitude ?? 100) * .12),
+    endX: startX + directionX * (item.magnitude ?? 100),
+    endY: startY + directionY * (item.magnitude ?? 100),
   }
 }
 
@@ -59,7 +98,75 @@ function distanceToSegment(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
 }
 
+function gravityAcceleration(item, fields) {
+  return fields.reduce((total, field) => {
+    const dx = field.x - item.x
+    const dy = field.y - item.y
+    const distance = Math.max(Math.hypot(dx, dy), 90)
+    const strength = GRAVITY_STRENGTH / (distance * distance)
+    return {
+      ax: total.ax + dx / distance * strength,
+      ay: total.ay + dy / distance * strength,
+    }
+  }, { ax: 0, ay: 0 })
+}
+
+function drawSpring(context, x1, y1, x2, y2) {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const length = Math.max(Math.hypot(dx, dy), 1)
+  const directionX = dx / length
+  const directionY = dy / length
+  const normalX = -directionY
+  const normalY = directionX
+  const lead = Math.min(18, length * .16)
+  const coilLength = Math.max(length - lead * 2, 8)
+  const turns = Math.max(6, Math.min(18, Math.round(coilLength / 14)))
+  const amplitude = Math.min(15, Math.max(7, coilLength * .08))
+  context.save()
+  context.strokeStyle = 'rgba(76, 71, 64, .82)'
+  context.lineWidth = 1.7
+  context.beginPath()
+  context.moveTo(x1, y1)
+  context.lineTo(x1 + directionX * lead, y1 + directionY * lead)
+  for (let step = 0; step <= turns * 10; step += 1) {
+    const progress = step / (turns * 10)
+    const along = lead + coilLength * progress
+    const wave = Math.sin(progress * turns * Math.PI * 2) * amplitude
+    context.lineTo(x1 + directionX * along + normalX * wave, y1 + directionY * along + normalY * wave)
+  }
+  context.lineTo(x2, y2)
+  context.stroke()
+  context.restore()
+}
+
+function springAnchorPoint(source, mass) {
+  const dx = mass.x - source.x
+  const dy = mass.y - source.y
+  const distance = Math.max(Math.hypot(dx, dy), 1)
+  return {
+    x: source.x + dx / distance * (source.width / 2 + 10),
+    y: source.y + dy / distance * Math.min(source.height * .16, 16),
+  }
+}
+
+function attachToSpring(items, id) {
+  const mass = items.find((item) => item.id === id)
+  if (!mass || mass.kind !== 'letter' || normalize(mass.text) !== 'm') return null
+  const spring = items
+    .filter((item) => item.id !== id && isSpringSource(item))
+    .sort((a, b) => Math.hypot(a.x - mass.x, a.y - mass.y) - Math.hypot(b.x - mass.x, b.y - mass.y))[0]
+  if (!spring || Math.hypot(spring.x - mass.x, spring.y - mass.y) > 220) return null
+  const restLength = Math.max(Math.hypot(spring.x - mass.x, spring.y - mass.y), 80)
+  return items.map((item) => {
+    if (item.id === id) return { ...item, attachedTo: spring.id, springRestLength: restLength, held: false, vx: 0, vy: 0 }
+    if (item.id === spring.id && item.kind === 'spring') return { ...item, vx: 0, vy: 0 }
+    return item
+  })
+}
+
 function displayFormula(formula) {
+  if (formula.kind === 'springEnergy') return <span className="energy-formula"><span>½</span><span>k</span><span>e<sup>2</sup></span></span>
   if (formula.kind !== 'gravity') return formula.text
   const denominator = formula.text.includes('/R') ? 'R' : 'r'
   return <span className="gravity-formula"><span>F=</span><Fraction numerator="GMm" denominator={denominator} exponent="2" /></span>
@@ -104,26 +211,37 @@ function App() {
         const width = window.innerWidth
         const height = window.innerHeight
         const floor = height * .83
+        const gravityFields = current.filter((other) => other.kind === 'gravity')
         const next = current.map((item) => {
           if (item.held) return item
+          const attachedMass = current.some((other) => other.attachedTo === item.id)
+          if (isSpringSource(item) && attachedMass) return { ...item, vx: 0, vy: 0 }
           const updated = { ...item, age: item.age + dt, trail: item.trail.filter((point) => now - point.time < 700) }
           const isM = item.kind === 'letter' && normalize(item.text) === 'm'
-          const isGravity = current.some((other) => other.kind === 'gravity') && isM
+          const attachedSpring = item.attachedTo ? current.find((other) => other.id === item.attachedTo && isSpringSource(other)) : null
+          const isDynamicFormula = ['newton', 'weight', 'electric', 'spring'].includes(item.kind)
           let ax = 0
           let ay = isM ? 620 : 0
           if (item.kind === 'newton') {
-            ax = -120
+            ax = -(item.magnitude ?? 120)
             ay = 0
+          } else if (item.kind === 'weight') {
+            ay = item.magnitude ?? 120
+          } else if (item.kind === 'electric') {
+            ax = item.magnitude ?? 120
           } else if (item.kind === 'spring') {
             ax = -(item.x - item.anchorX) * 5.5 - item.vx * .02
             ay = -(item.y - item.anchorY) * 4 - item.vy * .04
-          } else if (isGravity) {
-            const field = current.find((other) => other.kind === 'gravity')
-            const dx = field.x - item.x
-            const dy = field.y - item.y
-            const distance = Math.max(Math.hypot(dx, dy), 145)
-            ax = dx / distance * 210000 / (distance * distance)
-            ay = dy / distance * 210000 / (distance * distance)
+          }
+          if (attachedSpring) {
+            const springForce = springAcceleration(item, attachedSpring)
+            ax += springForce.ax
+            ay += springForce.ay
+          }
+          if (gravityFields.length && (isM || isDynamicFormula)) {
+            const fieldForce = gravityAcceleration(item, gravityFields)
+            ax += fieldForce.ax
+            ay += fieldForce.ay
           }
           updated.vx = clamp(updated.vx + ax * dt, -420, 420)
           updated.vy = clamp(updated.vy + ay * dt, -420, 420)
@@ -178,9 +296,14 @@ function App() {
       }
       context.clearRect(0, 0, width, height)
       itemsRef.current.forEach((item) => {
-        if (['letter', 'law', 'invalid', 'gravity'].includes(item.kind) || item.held) {
-          if (item.kind !== 'gravity') return
+        if (item.held) return
+        const attachedMass = itemsRef.current.find((candidate) => candidate.attachedTo === item.id)
+        if (isSpringSource(item)) {
+          const endpoint = attachedMass ?? { x: item.x + item.width / 2 + 150, y: item.y }
+          const anchor = springAnchorPoint(item, endpoint)
+          drawSpring(context, anchor.x, anchor.y, endpoint.x, endpoint.y)
         }
+        if (['letter', 'law', 'invalid', 'springEnergy'].includes(item.kind)) return
         item.trail.forEach((point, index) => {
           const opacity = Math.max(0, .18 * (index + 1) / item.trail.length)
           context.fillStyle = `rgba(75, 71, 64, ${opacity})`
@@ -223,7 +346,7 @@ function App() {
       setItems((current) => current.map((item) => {
         if (item.id !== active.id) return item
         const projection = (event.clientX - item.x) * active.directionX + (event.clientY - item.y) * active.directionY
-        return { ...item, magnitude: clamp(projection - item.width / 2 - 18, MIN_MAGNITUDE, MAX_MAGNITUDE) }
+        return { ...item, magnitude: clamp(projection - active.edge, MIN_MAGNITUDE, MAX_MAGNITUDE) }
       }))
       return
     }
@@ -240,7 +363,7 @@ function App() {
       remove(active.id)
       return
     }
-    setItems((current) => mergeNear(current, active.id))
+    setItems((current) => attachToSpring(current, active.id) ?? mergeNear(current, active.id))
   }
 
   const start = (event, text, id = null) => {
@@ -252,20 +375,20 @@ function App() {
     const item = current || { x: event.clientX, y: event.clientY }
     drag.current = { id: itemId, pointerId: event.pointerId, dx: (item.x || event.clientX) - event.clientX, dy: (item.y || event.clientY) - event.clientY }
     if (event.currentTarget.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId)
-    setItems((list) => list.map((body) => body.id === itemId ? { ...body, held: true } : body))
+    setItems((list) => list.map((body) => body.id === itemId ? { ...body, held: true, attachedTo: undefined, springRestLength: undefined } : body))
   }
 
   const beginCanvas = (event) => {
     if (event.button !== 0 || drag.current) return
     const hit = [...itemsRef.current].reverse().find((item) => {
-      if (['letter', 'law', 'invalid', 'gravity'].includes(item.kind) || item.held || Math.hypot(item.vx, item.vy) < 5) return false
+      if (['letter', 'law', 'invalid', 'gravity', 'springEnergy'].includes(item.kind) || item.held || Math.hypot(item.vx, item.vy) < 5) return false
       const arrow = arrowGeometry(item)
       return distanceToSegment(event.clientX, event.clientY, arrow.startX, arrow.startY, arrow.endX, arrow.endY) < 16
     })
     if (!hit) return
     event.preventDefault()
     const arrow = arrowGeometry(hit)
-    drag.current = { type: 'arrow', id: hit.id, pointerId: event.pointerId, directionX: arrow.directionX, directionY: arrow.directionY }
+    drag.current = { type: 'arrow', id: hit.id, pointerId: event.pointerId, directionX: arrow.directionX, directionY: arrow.directionY, edge: arrow.edge }
     if (event.currentTarget.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId)
   }
 
@@ -295,12 +418,7 @@ function mergeNear(items, id) {
   if (!target) return items.map((item) => item.id === id ? { ...item, held: false } : item)
   const first = current.x < target.x ? current : target
   const second = first === current ? target : current
-  let text = first.text + second.text
-  if (normalize(text) === 'Fma') text = 'F=ma'
-  if (normalize(text) === 'Fmg') text = 'F=mg'
-  if (normalize(text) === 'Fkx') text = 'F=−kx'
-  if (normalize(text) === 'FqE') text = 'F=qE'
-  if (normalize(text) === 'FGMmr' || normalize(text) === 'FGMmR') text = 'F=GMm/r²'
+  const text = canonicalFormula(first.text + second.text)
   const kind = kindFor(text)
   const metrics = formulaMetrics(text, first.fontSize)
   const merged = { ...first, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, text, kind, held: false, ...metrics, vx: 0, vy: 0, anchorX: (first.x + second.x) / 2, anchorY: (first.y + second.y) / 2 }
