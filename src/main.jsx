@@ -11,7 +11,8 @@ const MAX_MAGNITUDE = 360
 const clamp = (number, min, max) => Math.max(min, Math.min(max, number))
 const normalize = (text) => text.replaceAll('−', '-').replace(/\s/g, '')
 const responsiveFont = () => clamp(Math.min(window.innerWidth * .1, window.innerHeight * .2), 56, 110)
-const glyphWidth = (text, fontSize = FONT) => [...text].reduce((sum, glyph) => sum + (/[mMwW]/.test(glyph) ? .76 : /[=+−]/.test(glyph) ? .63 : /[Ii1]/.test(glyph) ? .33 : .5), 0) * fontSize
+const glyphUnits = (text) => [...text].reduce((sum, glyph) => sum + (/[mMwW]/.test(glyph) ? .76 : /[=+−]/.test(glyph) ? .63 : /[Ii1]/.test(glyph) ? .33 : .5), 0)
+const glyphWidth = (text, fontSize = FONT) => glyphUnits(text) * fontSize
 
 function kindFor(text) {
   const value = normalize(text)
@@ -21,6 +22,15 @@ function kindFor(text) {
   if (value === 'F=mg' || value === 'F=qE' || value === 'V=IR' || value === 'P=VI' || value === 'Q=mcT' || value === 'E=hf') return 'law'
   if (value.length <= 1 || ['mg', 'GMm', 'kx', 'cv', 'qE', 'IR', 'VI', 'mcT', 'hf'].includes(value)) return 'letter'
   return 'invalid'
+}
+
+function formulaMetrics(text, fontSize) {
+  const value = normalize(text)
+  if (/^F=GMm\/[rR](²|\^2)$/.test(value)) {
+    const fractionWidth = Math.max(glyphUnits('GMm') + .3, glyphUnits('r') + .42)
+    return { width: (glyphUnits('F=') + fractionWidth + .1) * fontSize, height: fontSize * 1.24 }
+  }
+  return { width: glyphWidth(text, fontSize), height: fontSize }
 }
 
 function arrowGeometry(item) {
@@ -52,7 +62,15 @@ function distanceToSegment(px, py, x1, y1, x2, y2) {
 function displayFormula(formula) {
   if (formula.kind !== 'gravity') return formula.text
   const denominator = formula.text.includes('/R') ? 'R' : 'r'
-  return <><span>F=</span><span className="fraction"><span>GMm</span><span>{denominator}<sup>2</sup></span></span></>
+  return <span className="gravity-formula"><span>F=</span><Fraction numerator="GMm" denominator={denominator} exponent="2" /></span>
+}
+
+function Fraction({ numerator, denominator, exponent }) {
+  return <span className="fraction" role="img" aria-label={`${numerator} over ${denominator} squared`}>
+    <span className="fraction-part fraction-numerator">{numerator}</span>
+    <span className="fraction-rule" aria-hidden="true" />
+    <span className="fraction-part fraction-denominator">{denominator}<sup>{exponent}</sup></span>
+  </span>
 }
 
 function App() {
@@ -68,7 +86,8 @@ function App() {
   const add = (text, x, y, fresh = true) => {
     const id = nextId.current++
     const fontSize = responsiveFont()
-    const item = { id, text, x, y, vx: 0, vy: 0, held: false, kind: kindFor(text), age: 0, trail: [], fontSize, width: glyphWidth(text, fontSize), height: fontSize, magnitude: 100, anchorX: x, anchorY: y }
+    const metrics = formulaMetrics(text, fontSize)
+    const item = { id, text, x, y, vx: 0, vy: 0, held: false, kind: kindFor(text), age: 0, trail: [], fontSize, width: metrics.width, height: metrics.height, magnitude: 100, anchorX: x, anchorY: y }
     setItems((current) => [...current, item])
     return id
   }
@@ -136,7 +155,7 @@ function App() {
     frame = requestAnimationFrame(tick)
     const resize = () => {
       const fontSize = responsiveFont()
-      setItems((current) => current.map((item) => ({ ...item, fontSize, width: glyphWidth(item.text, fontSize), height: fontSize })))
+      setItems((current) => current.map((item) => ({ ...item, fontSize, ...formulaMetrics(item.text, fontSize) })))
     }
     window.addEventListener('resize', resize)
     return () => {
@@ -281,12 +300,10 @@ function mergeNear(items, id) {
   if (normalize(text) === 'Fmg') text = 'F=mg'
   if (normalize(text) === 'Fkx') text = 'F=−kx'
   if (normalize(text) === 'FqE') text = 'F=qE'
+  if (normalize(text) === 'FGMmr' || normalize(text) === 'FGMmR') text = 'F=GMm/r²'
   const kind = kindFor(text)
-  const merged = { ...first, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, text, kind, held: false, width: glyphWidth(text, first.fontSize), vx: 0, vy: 0, anchorX: (first.x + second.x) / 2, anchorY: (first.y + second.y) / 2 }
-  if (kind === 'gravity') {
-    merged.text = 'F=GMm/r²'
-    merged.width = glyphWidth(merged.text, merged.fontSize)
-  }
+  const metrics = formulaMetrics(text, first.fontSize)
+  const merged = { ...first, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, text, kind, held: false, ...metrics, vx: 0, vy: 0, anchorX: (first.x + second.x) / 2, anchorY: (first.y + second.y) / 2 }
   return items.filter((item) => item.id !== current.id && item.id !== target.id).concat(merged)
 }
 
