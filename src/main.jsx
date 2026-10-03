@@ -31,6 +31,8 @@ function App() {
   const trash = useRef(null)
   const nextId = useRef(1)
   const drag = useRef(null)
+  const itemsRef = useRef([])
+  itemsRef.current = items
 
   const add = (text, x, y, fresh = true) => {
     const id = nextId.current++
@@ -115,7 +117,7 @@ function App() {
         context.setTransform(ratio, 0, 0, ratio, 0, 0)
       }
       context.clearRect(0, 0, width, height)
-      items.forEach((item) => {
+      itemsRef.current.forEach((item) => {
         if (item.kind === 'letter' || item.held) return
         item.trail.forEach((point, index) => {
           const opacity = Math.max(0, .18 * (index + 1) / item.trail.length)
@@ -154,7 +156,7 @@ function App() {
     }
     const frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [items])
+  }, [])
 
   const move = (event) => {
     const active = drag.current
