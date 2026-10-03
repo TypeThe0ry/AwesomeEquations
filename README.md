@@ -2,6 +2,8 @@
 
 > A physics sandbox where equations become executable laws.
 
+[![Deploy to GitHub Pages](https://github.com/TypeThe0ry/AwesomeEquations/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/TypeThe0ry/AwesomeEquations/actions/workflows/deploy-pages.yml) · [Live demo](https://typethe0ry.github.io/AwesomeEquations/)
+
 Equation World lets you drag mathematical symbols onto a canvas, arrange them into equations, and watch the resulting rules affect a simulated world in real time.
 
 ## What is here
