@@ -33,7 +33,7 @@ npm run build
 
 ## GitHub Pages
 
-The workflow in `.github/workflows/deploy-pages.yml` builds the site on every push to `main`. In the repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions** once; after that the workflow publishes the Vite build automatically.
+The workflow in `.github/workflows/deploy-pages.yml` builds and publishes the site on every push to `main` using GitHub Actions.
 
 ## Topics
 
