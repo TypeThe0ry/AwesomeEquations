@@ -2,6 +2,9 @@
   "name": "equation-world",
   "private": true,
   "version": "0.1.0",
+  "description": "Equation-driven physics sandbox where mathematical symbols become executable laws.",
+  "keywords": ["physics", "physics-simulation", "equation-engine", "interactive-simulation", "educational-technology", "react", "vite", "github-pages"],
+  "homepage": "https://typethe0ry.github.io/AwesomeEquations/",
   "type": "module",
   "scripts": {
     "dev": "vite",
