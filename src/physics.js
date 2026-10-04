@@ -791,14 +791,20 @@ export function stepItem(raw, dt, fields = [], spring = null, peers = []) {
       const theta = next.theta ?? .4
       const tangentX = Math.cos(theta), tangentY = -Math.sin(theta)
       // Both pendulum laws are the small-angle model, with T=2π√(L/g).
-      const alpha = -g / length * (next.law === 'nonlinearPendulum' ? Math.sin(theta) : theta) + (extra.ax * tangentX + extra.ay * tangentY) / next.radius
+      const formulaForce = next.expression && next.outputSymbol === 'F'
+        ? evaluateExpression(next.expression, { ...p, θ: theta, x: theta, v: next.omega * length })
+        : null
+      const alpha = (formulaForce == null ? -g / length * (next.law === 'nonlinearPendulum' ? Math.sin(theta) : theta) : formulaForce / (mass * length))
+        + (extra.ax * tangentX + extra.ay * tangentY) / next.radius
       next.omega += alpha * h; next.theta += next.omega * h
       next.x = next.anchorX + Math.sin(next.theta) * next.radius
       next.y = next.anchorY + Math.cos(next.theta) * next.radius
       next.vx = Math.cos(next.theta) * next.radius * next.omega
       next.vy = -Math.sin(next.theta) * next.radius * next.omega
       next.ax = tangentX * alpha * next.radius; next.ay = tangentY * alpha * next.radius
-      next.liveValues = { ...p, θ: next.theta, F: -mass * g * next.theta, T: TAU * Math.sqrt(length / g), v: Math.hypot(next.vx, next.vy) / PIXELS_PER_UNIT }
+      const liveForce = formulaForce == null ? -mass * g * (next.law === 'nonlinearPendulum' ? Math.sin(next.theta) : next.theta)
+        : evaluateExpression(next.expression, { ...p, θ: next.theta, x: next.theta, v: next.omega * length })
+      next.liveValues = { ...p, θ: next.theta, F: liveForce, T: TAU * Math.sqrt(length / g), v: Math.hypot(next.vx, next.vy) / PIXELS_PER_UNIT }
       continue
     }
     if (visual === 'orbit' || visual === 'gravityOrbit') {
@@ -817,7 +823,9 @@ export function stepItem(raw, dt, fields = [], spring = null, peers = []) {
     if (visual === 'spring') {
       const displacement = ((next.x - next.anchorX) * direction.x + (next.y - next.anchorY) * direction.y) / PIXELS_PER_UNIT
       const velocity = (next.vx * direction.x + next.vy * direction.y) / PIXELS_PER_UNIT
-      const force = -p.k * (next.law === 'nonlinearSpring' ? displacement ** 3 : displacement) - (p.c ?? 0) * velocity
+      const force = next.expression && next.outputSymbol === 'F'
+        ? evaluateExpression(next.expression, { ...p, x: displacement, e: displacement, v: velocity })
+        : -p.k * (next.law === 'nonlinearSpring' ? displacement ** 3 : displacement) - (p.c ?? 0) * velocity
       ax = direction.x * force / mass * PIXELS_PER_UNIT; ay = direction.y * force / mass * PIXELS_PER_UNIT
       next.liveValues = { ...p, x: displacement, e: displacement, v: velocity, F: force, E: (next.law === 'nonlinearSpring' ? .25 * p.k * displacement ** 4 : .5 * p.k * displacement ** 2),
         T: TAU * Math.sqrt(mass / p.k) }
