@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Trash } from '@phosphor-icons/react'
 import './styles.css'
-import { clamp, normalize, resolveFormula, refreshFormula, defaultDirection, resetMotion, isField, isMass, isDynamic, isDirectional, isSpringSource, fieldAutoScale, fieldScaleFor, stepItem, changeArrow, resolveWorldCollisions } from './physics.js'
+import { clamp, normalize, resolveFormula, refreshFormula, defaultDirection, resetMotion, isField, isMass, isDynamic, isDirectional, isSpringSource, fieldAutoScale, fieldScaleFor, stepItem, changeArrow, changeParameter, parameterMinimum, readoutsFor, resolveWorldCollisions } from './physics.js'
 
 const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'u', 'x', 's', 't', 'W', 'P', 'p', 'J', 'E', 'K', 'e', 'k', 'L', 'd', 'r', 'U', 'R', 'I', 'q', 'B', 'G', 'c', 'f', 'μ', 'ρ', 'ω', 'λ', 'θ', 'τ', 'α', 'Q', 'T', '½', 'h', 'n', 'A', 'V', 'π', 'η', 'C', 'S']
 const FONT = 76
@@ -97,6 +97,101 @@ function drawSpring(context, x1, y1, x2, y2) {
   }
   context.lineTo(x2, y2)
   context.stroke()
+  context.restore()
+}
+
+function drawPhysicalVisual(context, item) {
+  const x = item.x, y = item.y
+  const w = item.width ?? 90, h = item.height ?? 76
+  const stroke = 'rgba(87, 80, 70, .28)'
+  const faint = 'rgba(87, 80, 70, .16)'
+  context.save()
+  context.strokeStyle = stroke
+  context.fillStyle = faint
+  context.lineWidth = 1.2
+  if (['orbit', 'gravityOrbit'].includes(item.visual)) {
+    context.beginPath(); context.arc(item.anchorX, item.anchorY, item.radius, 0, Math.PI * 2); context.stroke()
+    context.beginPath(); context.moveTo(item.anchorX, item.anchorY); context.lineTo(x, y); context.stroke()
+    context.beginPath(); context.arc(item.anchorX, item.anchorY, 4, 0, Math.PI * 2); context.fill()
+  } else if (item.visual === 'rotor') {
+    const radius = Math.max(24, Math.min(w, h) * .72)
+    context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.stroke()
+    for (let spoke = 0; spoke < 8; spoke += 1) {
+      const angle = (spoke * Math.PI) / 4 + (item.rotation ?? 0)
+      context.beginPath(); context.moveTo(x, y); context.lineTo(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius); context.stroke()
+    }
+    context.beginPath(); context.arc(x, y, 4, 0, Math.PI * 2); context.fill()
+  } else if (item.visual === 'wave' || item.visual === 'light') {
+    const phase = item.wavePhase ?? 0
+    const length = Math.max(80, w * 2.1)
+    context.beginPath()
+    for (let i = 0; i <= 40; i += 1) {
+      const px = x - length / 2 + (length * i) / 40
+      const py = y + Math.sin(i / 40 * Math.PI * 4 + phase) * Math.min(28, h * .35)
+      if (!i) context.moveTo(px, py); else context.lineTo(px, py)
+    }
+    context.stroke()
+    if (item.visual === 'light') {
+      for (let ray = -1; ray <= 1; ray += 1) {
+        context.beginPath(); context.moveTo(x + w / 2, y + ray * 13); context.lineTo(x + w / 2 + 72, y + ray * 24); context.stroke()
+      }
+    }
+  } else if (item.visual === 'circuit') {
+    const left = x - w * .9, right = x + w * .9
+    context.beginPath(); context.moveTo(left, y); context.lineTo(right, y); context.stroke()
+    const phase = (item.phase ?? 0) % 1
+    for (let dot = 0; dot < 6; dot += 1) {
+      const progress = (dot / 6 + phase) % 1
+      context.beginPath(); context.arc(left + progress * (right - left), y, 3, 0, Math.PI * 2); context.fill()
+    }
+  } else if (item.visual === 'thermal') {
+    const phase = item.phase ?? 0
+    for (let wave = -1; wave <= 1; wave += 1) {
+      context.beginPath()
+      for (let i = 0; i <= 20; i += 1) {
+        const px = x + (i - 10) * 7 + wave * 17
+        const py = y + h * .62 - i * 2 - Math.sin(i * .8 + phase) * 4
+        if (!i) context.moveTo(px, py); else context.lineTo(px, py)
+      }
+      context.stroke()
+    }
+  } else if (item.visual === 'piston') {
+    const piston = y + Math.sin((item.age ?? 0) * 2) * 12
+    context.strokeRect(x - w * .75, piston - h * .22, w * 1.5, h * .44)
+    context.beginPath(); context.moveTo(x - w * .9, piston - h * .55); context.lineTo(x - w * .9, piston + h * .55); context.stroke()
+    context.beginPath(); context.moveTo(x + w * .9, piston - h * .55); context.lineTo(x + w * .9, piston + h * .55); context.stroke()
+  } else if (item.visual === 'fluid' || item.visual === 'hydrostatic') {
+    const surface = item.fluidSurface ?? y + h
+    context.strokeStyle = 'rgba(87, 80, 70, .24)'
+    context.beginPath(); context.moveTo(x - w * 1.1, surface); context.lineTo(x + w * 1.1, surface); context.stroke()
+    context.fillStyle = 'rgba(110, 125, 130, .08)'; context.fillRect(x - w * 1.1, surface, w * 2.2, h * 1.6)
+    if (item.visual === 'fluid') {
+      context.strokeStyle = stroke; context.strokeRect(x - w * .34, y - h * .28, w * .68, h * .56)
+      context.beginPath(); context.moveTo(x, y + h * .3); context.lineTo(x, y - h * .55); context.stroke()
+    } else {
+      for (let row = 0; row < 4; row += 1) {
+        const py = surface + 18 + row * 16
+        context.beginPath(); context.moveTo(x - w * .55, py); context.lineTo(x + w * .55, py); context.stroke()
+        const pulse = 8 + Math.sin((item.phase ?? 0) * 2 + row) * 5
+        context.beginPath(); context.moveTo(x - pulse, py); context.lineTo(x + pulse, py); context.stroke()
+      }
+    }
+  } else if (item.visual === 'area') {
+    const radius = Math.max(24, Math.min(w, h) * (.62 + Math.sin((item.age ?? 0) * 2) * .05))
+    context.beginPath(); context.arc(x, y, radius, 0, Math.PI * 2); context.stroke()
+    context.beginPath(); context.moveTo(x, y); context.lineTo(x + radius, y); context.stroke()
+  } else if (item.visual === 'volume') {
+    const bw = w * .8, bh = h * (.52 + Math.sin((item.age ?? 0) * 2) * .06), depth = 18
+    context.strokeRect(x - bw / 2, y - bh / 2, bw, bh)
+    context.beginPath(); context.moveTo(x - bw / 2, y - bh / 2); context.lineTo(x - bw / 2 + depth, y - bh / 2 - depth); context.lineTo(x + bw / 2 + depth, y - bh / 2 - depth); context.lineTo(x + bw / 2, y - bh / 2); context.stroke()
+  } else if (item.visual === 'energyFall') {
+    context.setLineDash([3, 6]); context.beginPath(); context.moveTo(x, y - 170); context.lineTo(x, y + 160); context.stroke(); context.setLineDash([])
+    const energy = item.liveValues?.K ?? 0, potential = item.liveValues?.U ?? 0
+    context.fillStyle = 'rgba(87, 80, 70, .18)'; context.fillRect(x - w * .7, y + h / 2 + 8, Math.min(w * 1.4, Math.abs(potential) * .35), 4); context.fillRect(x - w * .7, y + h / 2 + 16, Math.min(w * 1.4, Math.abs(energy) * .35), 4)
+  } else if (item.visual === 'impulse') {
+    const pulse = 8 + (Math.sin((item.age ?? 0) * 12) + 1) * 5
+    context.beginPath(); context.arc(x, y, Math.max(w, h) * .55 + pulse, 0, Math.PI * 2); context.stroke()
+  }
   context.restore()
 }
 
@@ -271,19 +366,17 @@ function App() {
         if (item.inputSymbols?.length && item.parameters && !['letter', 'invalid'].includes(item.kind)) {
           context.fillStyle = 'rgba(69, 65, 59, .58)'
           context.font = 'italic 14px Times New Roman'
-          const output = item.outputSymbol && Number.isFinite(item.outputValue)
-            ? `${item.outputSymbol} = ${formatValue(item.outputValue)}`
-            : ''
-          const inputs = item.inputSymbols.map((symbol) => `${symbol} = ${formatValue(item.parameters[symbol])}${symbol === 'm' ? ' kg' : ''}`)
-          if (isSpringSource(item) && !item.inputSymbols.includes('m')) inputs.push(`m = ${formatValue(item.massValue ?? 1)} kg`)
-          context.fillText([output, ...inputs].filter(Boolean).join('   '), item.x - item.width / 2, item.y + item.height / 2 + 16)
+          const values = readoutsFor(item).map(({ symbol, value }) => `${symbol} = ${formatValue(value)}${symbol === 'm' ? ' kg' : ''}`)
+          if (isSpringSource(item) && !item.inputSymbols.includes('m')) values.push(`m = ${formatValue(item.massValue ?? 1)} kg`)
+          context.fillText(values.join('   '), item.x - item.width / 2, item.y + item.height / 2 + 16)
         }
         if (isMass(item)) {
           context.fillStyle = 'rgba(69, 65, 59, .58)'
           context.font = 'italic 14px Times New Roman'
           context.fillText('m = 1.00 kg', item.x - item.width / 2, item.y + item.height / 2 + 16)
         }
-        if (['letter', 'law', 'invalid', 'springEnergy'].includes(item.kind)) return
+        if (['letter', 'invalid'].includes(item.kind) || item.invalidReason) return
+        drawPhysicalVisual(context, item)
         item.trail.forEach((point, index) => {
           const opacity = Math.max(0, .18 * (index + 1) / item.trail.length)
           context.fillStyle = `rgba(75, 71, 64, ${opacity})`
@@ -296,20 +389,21 @@ function App() {
           for (let ring = 0; ring < 3; ring += 1) {
             context.strokeStyle = `rgba(87, 80, 70, ${.16 - ring * .035})`
             context.lineWidth = 1
+            const pulse = 1 + Math.sin((item.phase ?? 0) * 1.8 + ring * .7) * .035
             context.beginPath()
-            context.ellipse(item.x, item.y - 4, item.width * (.95 + ring * .32) * fieldScale, item.height * (.38 + ring * .13) * fieldScale, -.12, 0, Math.PI * 2)
+            context.ellipse(item.x, item.y - 4, item.width * (.95 + ring * .32) * fieldScale * pulse, item.height * (.38 + ring * .13) * fieldScale * pulse, -.12, 0, Math.PI * 2)
             context.stroke()
           }
           return
         }
-        if (item.kind === 'pendulum') {
+        if (item.visual === 'pendulum') {
           context.strokeStyle = 'rgba(87, 80, 70, .4)'
           context.beginPath()
           context.moveTo(item.anchorX, item.anchorY)
           context.lineTo(item.x, item.y - item.height / 2 - 6)
           context.stroke()
         }
-        if (item.kind === 'centripetal') {
+        if (item.visual === 'orbit' || item.visual === 'gravityOrbit') {
           context.strokeStyle = 'rgba(87, 80, 70, .16)'
           context.beginPath()
           context.arc(item.anchorX, item.anchorY, item.radius, 0, Math.PI * 2)
@@ -324,7 +418,7 @@ function App() {
         context.beginPath(); context.moveTo(startX, startY); context.lineTo(endX, endY); context.stroke()
         context.beginPath(); context.moveTo(endX, endY); context.lineTo(endX - directionX * 11 - directionY * 5, endY - directionY * 11 + directionX * 5); context.lineTo(endX - directionX * 11 + directionY * 5, endY - directionY * 11 - directionX * 5); context.closePath(); context.fill()
         const label = { newton: 'a', momentum: 'p', kineticEnergy: 'E', wave: 'v', kinematics: item.outputSymbol ?? 'v', impulse: 'J', torque: 'τ' }[item.kind] ?? 'F'
-        const arrowValue = item.kind === 'newton' ? item.accelerationValue : item.arrowValue ?? item.outputValue
+        const arrowValue = item.kind === 'newton' ? (item.liveValues?.a ?? item.accelerationValue) : item.liveValues?.[item.outputSymbol] ?? item.arrowValue ?? item.outputValue
         const arrowText = `${label} = ${formatValue(arrowValue)}`
         context.font = 'italic 15px Times New Roman'
         const arrowTextWidth = context.measureText(arrowText).width
@@ -332,7 +426,7 @@ function App() {
         context.fillText(arrowText, labelX, endY + directionY * 9 - 8)
         const speed = Math.hypot(item.vx, item.vy)
         context.font = 'italic 14px Times New Roman'
-        const measure = item.kind === 'work' ? `d = ${(item.travelled / 100).toFixed(2)}` : `v = ${(speed / 100).toFixed(2)}`
+        const measure = item.kind === 'work' ? `d = ${(item.travelled / 12).toFixed(2)}` : `v = ${(speed / 12).toFixed(2)}`
         context.fillText(measure, item.x - item.width / 2, item.y + item.height / 2 + 32)
         if (item.collisionFlash > 0) {
           context.strokeStyle = `rgba(69, 65, 59, ${item.collisionFlash * 2.4})`
@@ -355,18 +449,10 @@ function App() {
       setItems((current) => current.map((item) => {
         if (item.id !== active.id) return item
         const scale = Math.max(Math.abs(active.startValue) * .012, .03)
-        const minimum = ['m', 'r', 'k', 'c', 'f', 'λ', 'E', 'R', 't', 'T', 'A', 'V', 'π', 'η'].includes(active.symbol) ? .01 : -1000
+        const minimum = parameterMinimum(item, active.symbol)
         const maximum = 1000
         const value = clamp(active.startValue + (active.startY - event.clientY) * scale, minimum, maximum)
-        const updated = refreshFormula({ ...item, parameters: { ...item.parameters, [active.symbol]: value } })
-        if (['momentum', 'wave', 'kineticEnergy'].includes(updated.kind) && Number.isFinite(updated.speedValue)) {
-          const currentSpeed = Math.hypot(item.vx, item.vy)
-          const directionX = currentSpeed > 1 ? item.vx / currentSpeed : item.directionX
-          const directionY = currentSpeed > 1 ? item.vy / currentSpeed : item.directionY
-          updated.vx = directionX * updated.speedValue
-          updated.vy = directionY * updated.speedValue
-        }
-        return updated
+        return changeParameter(item, active.symbol, value)
       }))
       return
     }
@@ -451,7 +537,7 @@ function App() {
   return <main className="sandbox" onPointerDown={beginCanvas} onPointerMove={move} onPointerUp={release} onPointerCancel={(event) => release(event, true)}>
     <canvas ref={canvas} className="effects" aria-hidden="true" />
     <div className="floor" aria-hidden="true" />
-    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize, transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}rad)` }} data-equation={item.text} data-kind={item.kind} data-output={item.outputSymbol} data-output-value={item.outputValue} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-interaction-group={item.interactionGroup} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item, (event, symbol) => beginParameter(event, item.id, symbol))}</span></div>)}
+    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' || item.invalidReason ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize, transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}rad)` }} data-equation={item.text} data-kind={item.kind} data-visual={item.visual} data-invalid-reason={item.invalidReason} data-output={item.outputSymbol} data-output-value={item.outputValue} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-interaction-group={item.interactionGroup} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item, (event, symbol) => beginParameter(event, item.id, symbol))}</span></div>)}
     <aside className="palette" ref={palette}>{SYMBOLS.map((symbol) => <button key={symbol} type="button" className="symbol" onPointerDown={(event) => start(event, symbol)} onClick={(event) => clickPalette(event, symbol)}>{symbol}</button>)}</aside>
     <button className="trash" ref={trash} type="button" aria-label="删除符号" onClick={() => setItems([])}><Trash size={40} weight="light" /></button>
   </main>

@@ -15,6 +15,11 @@ Equation World lets you drag mathematical symbols onto a canvas, arrange them in
 - Use 49 supported relations, including `F=ma`, `F=GMm/r²`, `F=−kx`,
   `v=u+at`, `s=ut+½at²`, `J=Ft`, `p=mv`, `E=½mv²`, `U=mgh`,
   `L=mvr`, `τ=Iα`, `I=mr²`, `P=F/A`, `P=ρgh`, and `F=ρVg`.
+- Every relation has a matching live visual: force arrows and falling formulas,
+  orbiting gravity and centripetal motion, spring oscillation, pendulums,
+  rotating bodies, wave propagation, electric current, heat flow, pressure,
+  fluid buoyancy, and geometric expansion. The values printed under a formula
+  are the same state variables driving its animation.
 - Place completed equations together to create an interaction group. Linked
   force laws act on the same moving formulas, while fields, springs, and
   collisions continue to work across the whole canvas.

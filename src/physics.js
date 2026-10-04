@@ -35,8 +35,8 @@ export const EQUATIONS = [
   { id: 'angularAcceleration', text: 'α=τ/I', recipe: 'ατI', kind: 'law' },
   { id: 'rotationalEnergy', text: 'K=½Iω²', recipe: 'K½Iω', kind: 'law', recipes: ['K½Iωω'] },
   { id: 'rotationalPower', text: 'P=τω', recipe: 'Pτω', kind: 'law' },
-  { id: 'springPeriod', text: 'T²=mk', recipe: 'Tmk', kind: 'law' },
-  { id: 'pendulumPeriod', text: 'T²=L/g', recipe: 'TLg', kind: 'law' },
+  { id: 'springPeriod', text: 'T=2π√(m/k)', recipe: 'Tmk', kind: 'law' },
+  { id: 'pendulumPeriod', text: 'T=2π√(L/g)', recipe: 'TLg', kind: 'law' },
   { id: 'work', text: 'W=Fd', recipe: 'WFd', kind: 'work' },
   { id: 'power', text: 'P=Fv', recipe: 'PFv', kind: 'power' },
   { id: 'wave', text: 'v=fλ', recipe: 'vfλ', kind: 'wave' },
@@ -90,9 +90,9 @@ const MODELS = {
   },
   acceleratedDisplacement: {
     outputs: { s: ['u', 'a', 't'], u: ['s', 'a', 't'], a: ['s', 'u', 't'], t: ['s', 'u', 'a'] },
-    formats: { s: 's=ut+½at²', u: 'u=(s−½at²)/t', a: 'a=2(s−ut)/t²', t: 't=√(2s/a)' },
+    formats: { s: 's=ut+½at²', u: 'u=(s−½at²)/t', a: 'a=2(s−ut)/t²', t: 't=(√(u²+2as)−u)/a' },
     defaults: { s: 50, u: 0, a: 100, t: 1 },
-    rules: { s: p => p.u * p.t + .5 * p.a * p.t ** 2, u: p => (p.s - .5 * p.a * p.t ** 2) / safeDenom(p.t), a: p => 2 * (p.s - p.u * p.t) / safeDenom(p.t ** 2), t: p => Math.sqrt(Math.max(0, 2 * p.s / safeDenom(p.a))) },
+    rules: { s: p => p.u * p.t + .5 * p.a * p.t ** 2, u: p => (p.s - .5 * p.a * p.t ** 2) / safeDenom(p.t), a: p => 2 * (p.s - p.u * p.t) / safeDenom(p.t ** 2), t: p => Math.abs(p.a) < 1e-8 ? p.s / safeDenom(p.u) : (Math.sqrt(p.u ** 2 + 2 * p.a * p.s) - p.u) / p.a },
   },
   escapeSpeed: {
     outputs: { v: ['g', 'h'], g: ['v', 'h'], h: ['v', 'g'] },
@@ -252,15 +252,15 @@ const MODELS = {
   },
   springPeriod: {
     outputs: { T: ['m', 'k'], m: ['T', 'k'], k: ['T', 'm'] },
-    formats: { T: 'T²=mk', m: 'm=T²/k', k: 'k=T²/m' },
+    formats: { T: 'T=2π√(m/k)', m: 'm=k(T/2π)²', k: 'k=4π²m/T²' },
     defaults: { T: 1, m: 1, k: 1 },
-    rules: { T: p => Math.sqrt(Math.max(0, p.m * p.k)), m: p => p.T ** 2 / safeDenom(p.k), k: p => p.T ** 2 / safeDenom(p.m) },
+    rules: { T: p => 2 * Math.PI * Math.sqrt(p.m / p.k), m: p => p.k * (p.T / (2 * Math.PI)) ** 2, k: p => 4 * Math.PI ** 2 * p.m / safeDenom(p.T ** 2) },
   },
   pendulumPeriod: {
     outputs: { T: ['L', 'g'], L: ['T', 'g'], g: ['T', 'L'] },
-    formats: { T: 'T²=L/g', L: 'L=T²g', g: 'g=L/T²' },
+    formats: { T: 'T=2π√(L/g)', L: 'L=g(T/2π)²', g: 'g=4π²L/T²' },
     defaults: { T: 1, L: 1, g: 100 },
-    rules: { T: p => Math.sqrt(Math.max(0, p.L / safeDenom(p.g))), L: p => p.T ** 2 * p.g, g: p => p.L / safeDenom(p.T ** 2) },
+    rules: { T: p => 2 * Math.PI * Math.sqrt(p.L / p.g), L: p => p.g * (p.T / (2 * Math.PI)) ** 2, g: p => 4 * Math.PI ** 2 * p.L / safeDenom(p.T ** 2) },
   },
   work: {
     outputs: { W: ['F', 'd'], F: ['W', 'd'], d: ['W', 'F'] },
@@ -354,500 +354,529 @@ const MODELS = {
   },
 }
 
-const modelFor = (law) => MODELS[law] ?? null
-const safeDenom = (value) => Math.abs(value) < .01 ? (value < 0 ? -.01 : .01) : value
+// A consistent distance scale is shared by every law; displayed values are SI-like
+// sandbox values (G, electromagnetic constants and light speed may be rescaled).
+export const PIXELS_PER_UNIT = 12
+const TAU = 2 * Math.PI
+const safeDenom = value => Math.abs(value) < 1e-10 ? NaN : value
+const modelFor = law => MODELS[law]
 
-const signature = (text) => [...normalize(text).replace(/[=+\-/]/g, '')].sort().join('')
+const DEFAULTS = {
+  newton: { m: 1, a: 4, F: 4 }, weight: { m: 1, g: 9.81, F: 9.81 },
+  gravity: { G: 20, M: 20, m: 1, r: 10 },
+  velocityTime: { u: 0, a: 100, t: 1, v: 100 }, displacementTime: { v: 6, t: 2, s: 12 },
+  acceleratedDisplacement: { u: 0, a: 100, t: 1, s: 50 }, escapeSpeed: { g: 9.81, h: 6, v: Math.sqrt(2 * 9.81 * 6) },
+  impulse: { F: 100, t: 1, J: 100 }, spring: { k: 100, x: 1, F: -100 },
+  springEnergy: { k: 100, e: 1, E: 50 }, dampedSpring: { k: 4, x: 4, c: .8, v: 0 },
+  nonlinearSpring: { k: .3, x: 4 }, electric: { q: 1, E: 4, F: 4 },
+  friction: { μ: .3, m: 1, g: 9.81 }, drag: { c: .5, v: 8 }, quadraticDrag: { c: .04, v: 8 },
+  magnetic: { q: 1, v: 8, B: .5 }, centripetal: { m: 1, v: 8, r: 10 },
+  angularCentripetal: { m: 1, ω: .8, r: 10 }, pendulum: { m: 1, g: 9.81, θ: .4 },
+  momentum: { m: 1, v: 6, p: 6 }, kineticEnergy: { m: 1, v: 6, E: 18 },
+  potentialEnergy: { m: 1, g: 9.81, h: 6, U: 58.86 }, gravityPotential: { G: 20, M: 20, m: 1, r: 10, U: -40 },
+  angularMomentum: { m: 1, v: 10, r: 10, L: 100 }, torqueForce: { F: 2, r: 4, τ: 8 },
+  torqueAngular: { I: 1, α: 100, τ: 100 }, angularAcceleration: { I: 8, τ: 4, α: .5 },
+  momentInertia: { m: 1, r: 6, I: 36 }, angularVelocity: { v: 8, r: 10, ω: .8 },
+  rotationalEnergy: { I: 8, ω: 1, K: 4 }, rotationalPower: { τ: 2, ω: 1, P: 2 },
+  springPeriod: { m: 1, k: 4, T: Math.PI }, pendulumPeriod: { L: 10, g: 9.81, T: TAU * Math.sqrt(10 / 9.81) },
+  work: { F: 4, d: 8, W: 32 }, power: { F: 2, v: 6, P: 12 }, wave: { f: .8, λ: 8, v: 6.4 },
+  coulomb: { k: 40, Q: 1, q: 1, r: 10 }, pressure: { F: 100, A: 1, P: 100 },
+  density: { m: 1, V: 1, ρ: 1 }, fluidPressure: { ρ: 1, g: 9.81, h: 6, P: 58.86 },
+  buoyancy: { ρ: 1, V: 1, g: 100, F: 100 }, viscous: { η: .5, A: 1, v: 8, d: 1 },
+  circleArea: { π: Math.PI, r: 6, A: Math.PI * 36 }, volume: { A: 16, h: 4, V: 64 },
+  ohm: { V: 6, I: 2, R: 3 }, electricPower: { V: 6, I: 2, P: 12 },
+  heat: { m: 1, c: 4, T: 20, Q: 80 }, photon: { h: 1, f: 1.5, E: 1.5 },
+}
+for (const [law, defaults] of Object.entries(DEFAULTS)) MODELS[law].defaults = { ...MODELS[law].defaults, ...defaults }
+
+// Each recognized law has an explicit physical presentation. Algebraic and
+// geometrical relations get their actual physical context, not an invented force.
+export const VISUALS = {
+  newton: 'force', weight: 'fall', gravity: 'field',
+  velocityTime: 'acceleration', displacementTime: 'translation', acceleratedDisplacement: 'acceleration', escapeSpeed: 'fall',
+  impulse: 'impulse', spring: 'spring', dampedSpring: 'spring', nonlinearSpring: 'spring', springEnergy: 'spring',
+  electric: 'force', friction: 'resistance', drag: 'resistance', quadraticDrag: 'resistance', viscous: 'shear',
+  magnetic: 'magnetic', centripetal: 'orbit', angularCentripetal: 'orbit', pendulum: 'pendulum',
+  momentum: 'translation', kineticEnergy: 'translation', potentialEnergy: 'energyFall', gravityPotential: 'gravityOrbit',
+  angularMomentum: 'orbit', torqueForce: 'rotor', torqueAngular: 'rotor', angularAcceleration: 'rotor',
+  momentInertia: 'rotor', angularVelocity: 'orbit', rotationalEnergy: 'rotor', rotationalPower: 'rotor',
+  springPeriod: 'spring', pendulumPeriod: 'pendulum', work: 'work', power: 'power', wave: 'wave', coulomb: 'field',
+  pressure: 'piston', density: 'fluid', fluidPressure: 'hydrostatic', buoyancy: 'fluid',
+  circleArea: 'area', volume: 'volume', ohm: 'circuit', electricPower: 'circuit', heat: 'thermal', photon: 'light',
+}
+const signature = text => [...normalize(text).replace(/[=+\-/()√π2]/g, '')].sort().join('')
 const snippets = new Set(['mg', 'GMm', 'kx', 'cv', 'qE', 'IR', 'VI', 'mcT', 'hf'])
-
-function outputFromRaw(raw, model, fallback) {
-  if (!model) return fallback
-  const value = normalize(raw)
-  const left = value.includes('=') ? value.slice(0, value.indexOf('=')) : value
-  // When a relation has no explicit equals sign, the first dragged symbol is
-  // the intended output. A leading constant such as ½ has no output symbol,
-  // so keep the model's default instead of accidentally choosing k or e.
-  const candidate = value.includes('=')
-    ? [...left].find((symbol) => model.outputs[symbol])
-    : (model.outputs[[...left][0]] ? [...left][0] : null)
-  return candidate ?? fallback
-}
-
-function formulaText(law, output, fallback) {
-  return modelFor(law)?.formats?.[output] ?? fallback
-}
-
 export function resolveFormula(raw) {
   const value = normalize(raw)
-  // An explicitly entered equation must match a supported law, not just contain its letters.
-  let equation = EQUATIONS.find((law) => [law.text, ...(law.aliases ?? [])].some((text) => normalize(text) === value))
-  if (!equation) {
-    equation = EQUATIONS.find((law) => [law.recipe, ...(law.recipes ?? [])].some((recipe) => {
-      if (signature(recipe) === signature(value)) return true
-      return law.text.includes('²') && !recipe.includes('²') && signature(recipe + '²') === signature(value)
-    }))
-  }
-  if (equation) {
-    const model = modelFor(equation.id)
-    const fallbackOutput = model ? Object.keys(model.outputs)[0] : null
-    const outputSymbol = outputFromRaw(raw, model, fallbackOutput)
-    const inputSymbols = model?.outputs?.[outputSymbol] ?? []
-    return {
-      text: formulaText(equation.id, outputSymbol, equation.text),
-      kind: equation.kind,
-      law: equation.id,
-      outputSymbol,
-      inputSymbols,
+  let match
+  for (const law of EQUATIONS) {
+    const formats = MODELS[law.id].formats
+    const output = Object.keys(formats).find(key => normalize(formats[key]) === value)
+    if (output) { match = { law, output }; break }
+    if ([law.text, ...(law.aliases ?? [])].some(text => normalize(text) === value)) {
+      match = { law, output: Object.keys(formats)[0] }; break
     }
   }
-  return { text: raw, kind: [...value].length <= 1 || snippets.has(value) ? 'letter' : 'invalid', law: null }
+  // Recipe inference is reserved for symbol composition. An incorrect explicit
+  // equation such as F=m/a must never be silently rewritten as F=ma.
+  if (!match && !/[+\-/]/.test(value)) {
+    const law = EQUATIONS.find(entry => [entry.recipe, ...(entry.recipes ?? [])].some(recipe =>
+      signature(recipe) === signature(value) || (entry.text.includes('²') && signature(recipe + '²') === signature(value))))
+    if (law) {
+      const first = [...value][0]
+      match = { law, output: MODELS[law.id].outputs[first] ? first : Object.keys(MODELS[law.id].outputs)[0] }
+    }
+  }
+  if (!match) return { text: raw, kind: [...value].length <= 1 || snippets.has(value) ? 'letter' : 'invalid', law: null }
+  const { law, output } = match
+  return { text: MODELS[law.id].formats[output], kind: law.kind, law: law.id, outputSymbol: output,
+    inputSymbols: MODELS[law.id].outputs[output], visual: VISUALS[law.id] }
 }
+
+export function parameterMinimum(item, symbol) {
+  if (symbol === 'π') return Math.PI
+  // E is a signed electric field in F=qE; I is signed current in electrical laws.
+  if (symbol === 'E' && item.law === 'electric') return -1000
+  if (symbol === 'I' && ['ohm', 'electricPower'].includes(item.law)) return -1000
+  if (symbol === 'V' && ['ohm', 'electricPower'].includes(item.law)) return -1000
+  if (symbol === 'T' && item.law === 'heat') return -1000
+  if (symbol === 'h' && item.law === 'photon') return .001
+  return ['m', 'M', 'r', 'R', 'k', 'c', 'f', 'λ', 't', 'T', 'A', 'V', 'ρ', 'η', 'I', 'E', 'K', 'G', 'μ'].includes(symbol) ? .001 : -1000
+}
+export const arrowLength = value => clamp(26 + 32 * Math.log1p(Math.abs(value)), 26, 320)
+export const arrowValueFromLength = length => Math.expm1(Math.max(0, length - 26) / 32)
 
 export function refreshFormula(item) {
   const model = modelFor(item.law)
-  if (!model || !item.outputSymbol) return item
-  const inputSymbols = model.outputs[item.outputSymbol] ?? item.inputSymbols ?? []
+  if (!model) return { ...item, massValue: item.massValue ?? 1 }
+  const inputSymbols = model.outputs[item.outputSymbol] ?? []
   const values = { ...model.defaults }
-  inputSymbols.forEach((symbol) => {
-    if (Number.isFinite(item.parameters?.[symbol])) values[symbol] = item.parameters[symbol]
-  })
-  const outputValue = model.rules[item.outputSymbol]?.(values) ?? values[item.outputSymbol] ?? 0
-  values[item.outputSymbol] = outputValue
-  const forceValue = Number.isFinite(values.F) ? values.F : item.forceValue ?? outputValue
-  const massValue = Math.max(Math.abs(values.m ?? item.massValue ?? 1), .01)
-  const accelerationValue = Number.isFinite(values.a) ? values.a : forceValue / massValue
-  const speedValue = Number.isFinite(values.v) ? values.v : item.speedValue
-  const fieldForceValue = ['gravity', 'coulomb'].includes(item.kind)
-    ? Math.abs(outputValue * (item.kind === 'gravity' && item.outputSymbol === 'a' ? massValue : 1))
-    : undefined
-  const parameters = Object.fromEntries(inputSymbols.map((symbol) => [symbol, values[symbol]]))
-  const arrowValue = item.kind === 'newton' ? accelerationValue
-    : ['work', 'power'].includes(item.law) || item.outputSymbol === 'F'
-    ? forceValue
-    : item.kind === 'newton' && item.outputSymbol !== 'F' ? accelerationValue : outputValue
-  return {
-    ...item,
-    inputSymbols,
-    parameters,
-    outputValue,
-    forceValue,
-    massValue,
-    accelerationValue,
-    speedValue,
-    fieldForceValue,
-    arrowValue,
-    // Keep the arrow readable while preserving the exact calculated value below the formula.
-    magnitude: clamp(Math.abs(arrowValue) || 28, 28, 360),
+  for (const symbol of inputSymbols) values[symbol] = item.parameters?.[symbol] ?? values[symbol]
+  values[item.outputSymbol] = model.rules[item.outputSymbol](values)
+  let invalidReason = !Number.isFinite(values[item.outputSymbol]) ? '无实数解或除数为零' : ''
+  for (const [symbol, value] of Object.entries(values)) {
+    if (parameterMinimum(item, symbol) > 0 && value < 0) invalidReason = `${symbol} 不能为负数`
   }
+  const mass = values.m ?? item.massValue ?? 1
+  const visual = VISUALS[item.law]
+  const forceValue = values.F ?? 0
+  const accelerationValue = item.law === 'newton' ? values.a : forceValue / Math.max(mass, .001)
+  const fieldForceValue = item.law === 'gravity' ? values.G * values.M * mass / (values.r ** 2)
+    : item.law === 'coulomb' ? values.k * values.Q * values.q / (values.r ** 2) : 0
+  return { ...item, visual, inputSymbols, parameters: Object.fromEntries(inputSymbols.map(key => [key, values[key]])),
+    values, outputValue: values[item.outputSymbol], massValue: mass, forceValue, accelerationValue,
+    speedValue: values.v, fieldForceValue, invalidReason,
+    arrowValue: item.law === 'newton' ? values.a : values[item.outputSymbol], magnitude: arrowLength(item.law === 'newton' ? values.a : values[item.outputSymbol]) }
 }
-
-export const isField = (item) => ['gravity', 'coulomb'].includes(item.kind)
-// `fieldScale` is the user-controlled multiplier. The automatic component follows
-// the force represented by the equation so changing G, M, m, r, k, Q, or q also
-// changes the drawn field immediately.
-export const fieldAutoScale = (item) => clamp(Math.sqrt(Math.abs(item.fieldForceValue ?? item.forceValue ?? item.outputValue ?? 100) / 100), .45, 3)
-export const fieldScaleFor = (item) => clamp((item.fieldScale ?? 1) * fieldAutoScale(item), .35, 4)
-export const isSpringSource = (item) => ['spring', 'springEnergy'].includes(item.kind)
-export const isDynamic = (item) => !['letter', 'invalid', 'law', 'gravity', 'coulomb', 'springEnergy'].includes(item.kind)
-export const isDirectional = (item) => ['newton', 'weight', 'electric', 'momentum', 'kineticEnergy', 'work', 'power', 'wave', 'kinematics', 'impulse', 'fluid', 'torque'].includes(item.kind)
-export const isMass = (item) => item.kind === 'letter' && item.text === 'm'
-export const isCharged = (item) => (isDynamic(item) || item.kind === 'letter') && item.text.includes('q')
-export const isCollidable = (item) => !item.held && !isField(item) && (isDynamic(item) || isMass(item))
-
-export function collisionRadius(item) {
-  const width = item.width ?? 76
-  const height = item.height ?? 76
-  return clamp(Math.max(width * .24, height * .42), 22, 72)
-}
-
-function collisionMass(item) {
-  return isMass(item) ? .8 : clamp(Math.sqrt((item.width ?? 76) / 76), .8, 2.2)
-}
-
-// Resolves formula-to-formula and formula-to-world impacts after each integration step.
-// The visual formulas are treated as soft discs so long equations still have readable contacts.
-export function resolveWorldCollisions(items, { width, floor, restitution = .72 } = {}) {
-  const next = items.map((item) => ({ ...item }))
-  for (const item of next) {
-    if (!isCollidable(item)) continue
-    const radius = collisionRadius(item)
-    const left = item.width / 2
-    const right = width - item.width / 2
-    const top = item.height * .45
-    const bottom = floor - item.height * .18
-    if (item.x < left) {
-      item.x = left
-      if (item.vx < 0) item.vx = -item.vx * restitution
-      item.collisionFlash = .18
-    } else if (item.x > right) {
-      item.x = right
-      if (item.vx > 0) item.vx = -item.vx * restitution
-      item.collisionFlash = .18
-    }
-    if (item.y < top) {
-      item.y = top
-      if (item.vy < 0) item.vy = -item.vy * restitution
-      item.collisionFlash = .18
-    } else if (item.y > bottom) {
-      item.y = bottom
-      if (item.vy > 0) item.vy = -item.vy * restitution
-      item.vx *= .96
-      item.collisionFlash = .18
-    }
-    item.collisionRadius = radius
-  }
-  for (let i = 0; i < next.length; i += 1) {
-    const a = next[i]
-    if (!isCollidable(a)) continue
-    const ra = collisionRadius(a)
-    for (let j = i + 1; j < next.length; j += 1) {
-      const b = next[j]
-      if (!isCollidable(b)) continue
-      const rb = collisionRadius(b)
-      let dx = b.x - a.x
-      let dy = b.y - a.y
-      let distance = Math.hypot(dx, dy)
-      const minimum = ra + rb
-      if (distance >= minimum) continue
-      if (distance < 1e-6) {
-        dx = 1
-        dy = 0
-        distance = 1
-      }
-      const nx = dx / distance
-      const ny = dy / distance
-      const overlap = minimum - distance
-      const massA = collisionMass(a)
-      const massB = collisionMass(b)
-      const inverseA = 1 / massA
-      const inverseB = 1 / massB
-      const inverseTotal = inverseA + inverseB
-      a.x -= nx * overlap * inverseA / inverseTotal
-      a.y -= ny * overlap * inverseA / inverseTotal
-      b.x += nx * overlap * inverseB / inverseTotal
-      b.y += ny * overlap * inverseB / inverseTotal
-      const relativeVelocity = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
-      if (relativeVelocity < 0) {
-        const impulse = -(1 + restitution) * relativeVelocity / inverseTotal
-        a.vx -= impulse * nx * inverseA
-        a.vy -= impulse * ny * inverseA
-        b.vx += impulse * nx * inverseB
-        b.vy += impulse * ny * inverseB
-      }
-      a.collisionFlash = .18
-      b.collisionFlash = .18
-    }
-  }
-  return next
-}
+export const isField = item => VISUALS[item.law] === 'field'
+export const isMass = item => item.kind === 'letter' && item.text === 'm'
+export const isCharged = item => (item.kind === 'letter' && item.text === 'q') || (item.law && !!item.values?.q)
+export const isSpringSource = item => VISUALS[item.law] === 'spring'
+export const isDynamic = item => !!item.law && !item.invalidReason && !['field', 'area', 'volume', 'circuit', 'thermal', 'hydrostatic'].includes(VISUALS[item.law])
+export const isDirectional = item => ['force', 'fall', 'acceleration', 'translation', 'impulse', 'work', 'power', 'resistance', 'shear', 'wave', 'light', 'piston'].includes(VISUALS[item.law])
+export const isCollidable = item => !item.held && !item.invalidReason && !item.attachedTo &&
+  (isMass(item) || ['force', 'fall', 'energyFall', 'acceleration', 'translation', 'impulse', 'work', 'power', 'resistance', 'shear', 'magnetic', 'wave', 'light', 'momentum', 'kineticEnergy'].includes(VISUALS[item.law] ?? item.kind))
+export const fieldAutoScale = item => Math.min(3, Math.sqrt(Math.abs(item.fieldForceValue ?? 1) / 4))
+export const fieldScaleFor = item => (item.fieldScale ?? 1) * fieldAutoScale(item)
+export const collisionRadius = item => clamp(Math.max((item.width ?? 76) * .24, (item.height ?? 76) * .42), 22, 72)
 
 export function defaultDirection(kind) {
-  return ['weight'].includes(kind) ? { x: 0, y: 1 }
-    : ['buoyancy'].includes(kind) ? { x: 0, y: -1 }
-      : kind === 'newton' ? { x: -1, y: 0 } : { x: 1, y: 0 }
+  return kind === 'weight' ? { x: 0, y: 1 } : kind === 'newton' ? { x: -1, y: 0 } : { x: 1, y: 0 }
 }
-
-export function resetMotion(item, viewport = { width: 1200, height: 800 }) {
-  const direction = item.law === 'buoyancy' ? { x: 0, y: -1 } : defaultDirection(item.kind)
-  const magnitude = item.magnitude ?? 100
-  const scale = Math.min(viewport.width / 1200, viewport.height / 800, 1)
-  const radius = Math.max(45, 110 * scale)
-  let vx = 0, vy = 0
-  if (['friction', 'drag', 'quadraticDrag', 'magnetic'].includes(item.kind)) vx = 180
-  if (item.kind === 'spring') vx = 130
-  if (item.kind === 'momentum' || item.kind === 'wave') vx = item.speedValue ?? magnitude * 1.6
-  if (item.kind === 'kineticEnergy') vx = item.speedValue ?? Math.sqrt(200 * magnitude)
-  if (item.kind === 'power') vx = 40
-  if (item.kind === 'kinematics' && (item.outputSymbol === 'v' || item.law === 'displacementTime')) vx = item.outputValue ?? magnitude
-  const motion = {
-    vx, vy, ax: 0, ay: 0, age: 0, trail: [],
-    directionX: direction.x, directionY: direction.y,
-    anchorX: item.x, anchorY: item.y, radius,
-    fieldScale: item.fieldScale ?? 1, magnitude,
-    massValue: item.massValue ?? 1,
-    wavePhase: 0, travelled: 0, rotation: 0, angularVelocity: 0, impulseApplied: false,
-  }
-  if (item.kind === 'centripetal') {
+export function resetMotion(raw, viewport = { width: 1200, height: 800 }) {
+  const item = refreshFormula(raw)
+  const p = item.values ?? {}
+  const visual = VISUALS[item.law]
+  const direction = ['fall', 'energyFall'].includes(visual) ? { x: 0, y: 1 } : defaultDirection(item.kind)
+  const radius = clamp(Math.abs(p.r ?? p.L ?? 10) * PIXELS_PER_UNIT, 40, Math.min(viewport.width, viewport.height) * .28)
+  const motion = { vx: 0, vy: 0, ax: 0, ay: 0, age: 0, trail: [], travelled: 0,
+    directionX: direction.x, directionY: direction.y, anchorX: item.x, anchorY: item.y,
+    originX: item.x, originY: item.y, radius, fieldScale: item.fieldScale ?? 1,
+    massValue: item.massValue ?? 1, magnitude: item.magnitude, theta: .4, omega: 0,
+    rotation: 0, angularVelocity: 0, wavePhase: 0, phase: 0,
+    fluidSurface: item.y - 80, pistonPosition: 0, energyReleased: 0,
+    heightOrigin: Math.abs(p.h ?? 6), elapsedImpulse: 0, liveValues: { ...p }, visual }
+  let v = 0
+  if (['translation', 'wave'].includes(visual)) v = p.v ?? 6
+  if (visual === 'light') v = 8 // Light speed is fixed in this rescaled illustration.
+  if (visual === 'resistance' || visual === 'shear' || visual === 'magnetic') v = p.v ?? 8
+  if (visual === 'acceleration') v = p.u ?? 0
+  if (visual === 'power') v = p.v ?? 1
+  motion.vx = direction.x * v * PIXELS_PER_UNIT
+  motion.vy = direction.y * v * PIXELS_PER_UNIT
+  if (['orbit', 'gravityOrbit'].includes(visual)) {
     motion.anchorX = item.x - radius
-    motion.vy = 150
+    motion.omega = item.law === 'gravityPotential' ? Math.sqrt(p.G * p.M / Math.abs(p.r) ** 3)
+      : p.ω ?? ((p.v ?? 8) / Math.abs(p.r ?? 10))
+    motion.vx = 0; motion.vy = motion.omega * radius
   }
-  if (item.kind === 'pendulum') {
-    motion.radius = radius * 1.4
-    motion.theta = .45
-    motion.omega = 0
-    motion.anchorX = item.x - Math.sin(motion.theta) * motion.radius
-    motion.anchorY = item.y - Math.cos(motion.theta) * motion.radius
+  if (visual === 'rotor') motion.angularVelocity = p.ω ?? 0
+  // I=mr² depicts a freely rotating body with an initial angular speed; it
+  // does not manufacture a torque merely because inertia has been defined.
+  if (item.law === 'momentInertia') motion.angularVelocity = 1
+  if (visual === 'spring') {
+    const extension = p.x ?? p.e ?? 4
+    motion.anchorX = item.x - extension * PIXELS_PER_UNIT
+  }
+  if (visual === 'pendulum') {
+    motion.theta = p.θ ?? .4
+    motion.anchorX = item.x - Math.sin(motion.theta) * radius
+    motion.anchorY = item.y - Math.cos(motion.theta) * radius
   }
   return motion
 }
 
 export function fieldAcceleration(item, fields) {
-  return fields.reduce((sum, field) => {
-    if (field.id === item.id || (field.kind === 'coulomb' && !isCharged(item))) return sum
+  const mass = Math.max(item.massValue ?? 1, .001)
+  return fields.reduce((sum, raw) => {
+    const field = refreshFormula(raw)
+    if (field.id === item.id || field.invalidReason || (field.law === 'coulomb' && !isCharged(item))) return sum
     const dx = field.x - item.x, dy = field.y - item.y
-    const distance = Math.max(Math.hypot(dx, dy), 90)
-    // Coulomb: like charges repel. Gravity: masses attract. Neither has a hard range cutoff.
-    const sign = field.kind === 'coulomb' ? -1 : 1
-    const strength = sign * 12_000_000 * fieldScaleFor(field) / distance ** 2
-    return { ax: sum.ax + dx / distance * strength, ay: sum.ay + dy / distance * strength }
+    const distance = Math.max(Math.hypot(dx, dy), 24)
+    const r = distance / PIXELS_PER_UNIT
+    const p = field.values
+    const strength = field.law === 'coulomb' ? -p.k * p.Q * (item.values?.q ?? 1) / (mass * r ** 2)
+      : p.G * p.M / r ** 2
+    return { ax: sum.ax + dx / distance * strength * PIXELS_PER_UNIT * (field.fieldScale ?? 1),
+      ay: sum.ay + dy / distance * strength * PIXELS_PER_UNIT * (field.fieldScale ?? 1) }
   }, { ax: 0, ay: 0 })
 }
-
-export function springAcceleration(item, spring) {
+export function springAcceleration(item, raw) {
+  const spring = refreshFormula(raw), p = spring.values
   const dx = spring.x - item.x, dy = spring.y - item.y
   const distance = Math.max(Math.hypot(dx, dy), 1)
-  const extension = distance - (item.springRestLength ?? 100)
-  const k = 7 * (spring.magnitude ?? 100) / 100
-  const strength = spring.law === 'nonlinearSpring' ? k * extension ** 3 / 10000 : k * extension
-  const damping = spring.law === 'dampedSpring' ? 1.6 : .08
-  return { ax: dx / distance * strength - item.vx * damping, ay: dy / distance * strength - item.vy * damping }
+  const x = (distance - (item.springRestLength ?? 100)) / PIXELS_PER_UNIT
+  const radialV = -((item.vx ?? 0) * dx + (item.vy ?? 0) * dy) / distance / PIXELS_PER_UNIT
+  const mass = Math.max(item.massValue ?? 1, .001)
+  const restoring = (p.k * (spring.law === 'nonlinearSpring' ? x ** 3 : x) + (p.c ?? 0) * radialV) / mass * PIXELS_PER_UNIT
+  return { ax: dx / distance * restoring, ay: dy / distance * restoring }
 }
 
-// Equations dropped on top of one another share an interaction group. Force
-// equations in that group contribute to the motion of the other members, so a
-// mass can respond to several visible laws at once instead of becoming an
-// isolated animation.
+// Only force-producing laws contribute a force. Momentum, energy and Newton's
+// constitutive relation are never converted blindly into additional forces.
+const forceLaws = new Set(['newton', 'weight', 'electric', 'friction', 'drag', 'quadraticDrag', 'viscous', 'pressure', 'fluidPressure', 'buoyancy', 'spring', 'dampedSpring', 'nonlinearSpring', 'springEnergy'])
 export function interactionAcceleration(item, peers = []) {
-  if (!item.interactionGroup || !peers.length) return { ax: 0, ay: 0 }
-  return peers.reduce((sum, peer) => {
-    if (peer.id === item.id || ['letter', 'invalid', 'law', 'gravity', 'coulomb', 'springEnergy'].includes(peer.kind)) return sum
-    if (peer.kind === 'spring') {
-      const elastic = springAcceleration(item, peer)
-      return { ax: sum.ax + elastic.ax, ay: sum.ay + elastic.ay }
+  if (!item.interactionGroup) return { ax: 0, ay: 0 }
+  const target = item.values ? item : refreshFormula(item)
+  const constitutiveOnly = peers.some(peer => peer.law !== 'newton' && forceLaws.has(peer.law))
+  return peers.reduce((sum, rawPeer) => {
+    const peer = rawPeer.values ? rawPeer : { ...refreshFormula(rawPeer), ...rawPeer }
+    if (peer.id === item.id || peer.interactionGroup !== item.interactionGroup || peer.invalidReason || !forceLaws.has(peer.law)) return sum
+    if (peer.law === 'newton' && constitutiveOnly) return sum
+    if (isSpringSource(peer)) {
+      const result = springAcceleration({ ...item, springRestLength: item.springRestLength ?? 80 }, peer)
+      return { ax: sum.ax + result.ax, ay: sum.ay + result.ay }
     }
-    const direction = peer.directionX === undefined ? defaultDirection(peer.kind) : { x: peer.directionX, y: peer.directionY }
-    const mass = Math.max(Math.abs(item.massValue ?? 1), .01)
-    const force = peer.forceValue ?? peer.outputValue
-    if (!Number.isFinite(force)) return sum
-    if (['friction', 'drag', 'quadraticDrag', 'viscous'].includes(peer.kind)) {
-      const speed = Math.hypot(item.vx ?? 0, item.vy ?? 0)
-      if (!speed) return sum
-      const drag = peer.kind === 'friction' ? Math.abs(force)
-        : peer.kind === 'quadraticDrag' ? Math.abs(force) * speed / 100
-          : Math.abs(force) / 90 * speed
-      return { ax: sum.ax - (item.vx / speed) * drag / mass, ay: sum.ay - (item.vy / speed) * drag / mass }
+    const p = peer.values, mass = Math.max(target.massValue ?? item.massValue ?? 1, .001)
+    const vx = (target.vx ?? item.vx ?? 0) / PIXELS_PER_UNIT, vy = (target.vy ?? item.vy ?? 0) / PIXELS_PER_UNIT, speed = Math.hypot(vx, vy)
+    if (['friction', 'drag', 'quadraticDrag', 'viscous'].includes(peer.law)) {
+      const force = peer.law === 'friction' ? p.μ * mass * p.g
+        : peer.law === 'drag' ? p.c * speed : peer.law === 'quadraticDrag' ? p.c * speed ** 2 : p.η * p.A * speed / p.d
+      return speed ? { ax: sum.ax - vx / speed * force / mass * PIXELS_PER_UNIT, ay: sum.ay - vy / speed * force / mass * PIXELS_PER_UNIT } : sum
     }
-    const sign = peer.kind === 'buoyancy' ? 1 : 1
-    return { ax: sum.ax + direction.x * force * sign / mass, ay: sum.ay + direction.y * force * sign / mass }
+    const force = peer.law === 'newton' ? rawPeer.forceValue ?? rawPeer.outputValue ?? p.F ?? 0
+      : peer.law === 'weight' ? mass * p.g : peer.law === 'buoyancy' ? -p.ρ * (item.values?.V ?? p.V) * p.g : p.F ?? 0
+    const direction = ['weight', 'buoyancy'].includes(peer.law) ? { x: 0, y: 1 } : { x: rawPeer.directionX ?? peer.directionX ?? 1, y: rawPeer.directionY ?? peer.directionY ?? 0 }
+    const scale = peer.law === 'newton' ? 1 : PIXELS_PER_UNIT
+    return { ax: sum.ax + direction.x * force / mass * scale, ay: sum.ay + direction.y * force / mass * scale }
   }, { ax: 0, ay: 0 })
 }
 
-// Pure integrator, shared by the app and physical-invariant tests.
-export function stepItem(item, dt, fields = [], spring = null, peers = []) {
-  const next = { ...item, age: item.age + dt }
-  if (!isDynamic(item) && !isMass(item) && !isCharged(item)) return next
-  let remaining = dt
-  while (remaining > 1e-8) {
-    const h = Math.min(remaining, 1 / 120)
+export function stepItem(raw, dt, fields = [], spring = null, peers = []) {
+  let next = raw.values ? { ...raw } : refreshFormula(raw)
+  if (next.held || next.invalidReason || next.kind === 'invalid') return next
+  const p = next.values ?? {}, mass = Math.max(next.massValue ?? 1, .001), visual = VISUALS[next.law]
+  if (!next.law && !isMass(next) && !isCharged(next)) return next
+  let remaining = Math.max(dt, 0)
+  while (remaining > 1e-9) {
+    const h = Math.min(remaining, 1 / 240)
     remaining -= h
-    let ax = 0, ay = isMass(next) ? 620 : 0
-    const magnitude = next.magnitude ?? 100
-    if (next.kind === 'kinematics') {
-      const value = next.outputValue ?? magnitude
-      if (next.outputSymbol === 'v' || next.law === 'displacementTime') {
-        // v=... and s=vt describe translational motion directly.
-        next.vx = next.directionX * value
-        next.vy = next.directionY * value
-      } else {
-        ax = next.directionX * value
-        ay = next.directionY * value
-      }
-    }
-    if (next.kind === 'impulse' && !next.impulseApplied) {
-      const impulse = next.outputValue ?? magnitude
-      const mass = Math.max(Math.abs(next.massValue ?? 1), .01)
-      next.vx += next.directionX * impulse / mass
-      next.vy += next.directionY * impulse / mass
-      next.impulseApplied = true
-    }
-    if (next.kind === 'fluid') {
-      const force = next.forceValue ?? next.outputValue ?? magnitude
-      const mass = Math.max(Math.abs(next.massValue ?? 1), .01)
-      ax = next.directionX * force / mass
-      ay = next.directionY * force / mass
-      if (next.law === 'viscous') {
-        ax -= next.vx * Math.abs(force) / 180
-        ay -= next.vy * Math.abs(force) / 180
-      }
-    }
-    if (next.kind === 'torque') {
-      const torque = next.outputValue ?? magnitude
-      next.angularVelocity += torque / Math.max(next.massValue ?? 1, .1) * h
-      next.rotation += next.angularVelocity * h
-      next.ax = 0
-      next.ay = 0
-    }
-    if (['newton', 'weight', 'electric', 'work'].includes(next.kind)) {
-      const strength = next.kind === 'work' && next.travelled > 160 ? 0
-        : next.kind === 'work' ? (next.forceValue ?? magnitude)
-          : (next.accelerationValue ?? magnitude)
-      ax = next.directionX * strength
-      ay = next.directionY * strength
-    }
-    if (next.kind === 'power') {
-      const speed = Math.max(Math.hypot(next.vx, next.vy), 30)
-      const force = next.forceValue ?? magnitude
-      ax = next.directionX * (force * 100 / speed)
-      ay = next.directionY * (force * 100 / speed)
-    }
-    if (next.kind === 'spring') {
-      const dx = next.anchorX - next.x, dy = next.anchorY - next.y
-      const k = magnitude / 20
-      const damping = next.law === 'dampedSpring' ? 1.6 : .02
-      ax = next.law === 'nonlinearSpring' ? k * dx ** 3 / 10000 : k * dx
-      ay = next.law === 'nonlinearSpring' ? k * dy ** 3 / 10000 : k * dy
-      ax -= next.vx * damping
-      ay -= next.vy * damping
-    }
-    const external = next.kind === 'wave' ? { ax: 0, ay: 0 } : fieldAcceleration(next, fields)
-    ax += external.ax
-    ay += external.ay
-    if (spring) {
-      const elastic = springAcceleration(next, spring)
-      ax += elastic.ax
-      ay += elastic.ay
-    }
+    next.age = (next.age ?? 0) + h
+    let ax = 0, ay = isMass(next) ? 9.81 * PIXELS_PER_UNIT : 0
+    const external = fieldAcceleration(next, fields)
     const linked = interactionAcceleration(next, peers)
-    ax += linked.ax
-    ay += linked.ay
-    if (next.kind === 'pendulum') {
-      const length = next.radius
-      const tangentX = Math.cos(next.theta), tangentY = -Math.sin(next.theta)
-      const angularAcceleration = -(magnitude * 4 / length) * next.theta + (external.ax * tangentX + external.ay * tangentY) / length
-      next.omega += angularAcceleration * h
-      next.theta += next.omega * h
-      next.x = next.anchorX + Math.sin(next.theta) * length
-      next.y = next.anchorY + Math.cos(next.theta) * length
-      next.vx = Math.cos(next.theta) * length * next.omega
-      next.vy = -Math.sin(next.theta) * length * next.omega
-      next.ax = tangentX * angularAcceleration * length
-      next.ay = tangentY * angularAcceleration * length
+    const extra = { ax: external.ax + linked.ax, ay: external.ay + linked.ay }
+    if (spring) { const force = springAcceleration(next, spring); extra.ax += force.ax; extra.ay += force.ay }
+    const direction = { x: next.directionX ?? 1, y: next.directionY ?? 0 }
+    const forcePeers = peers.filter(peer => peer.id !== next.id && peer.law !== 'newton' && forceLaws.has(peer.law))
+    if (visual === 'field' || visual === 'area' || visual === 'volume' || visual === 'hydrostatic') {
+      next.phase = next.age; continue
+    }
+    if (visual === 'circuit') {
+      const current = p.I ?? 0
+      next.phase = (next.phase ?? 0) + current * h
+      next.energyReleased = (next.energyReleased ?? 0) + (p.V * p.I) * h
       continue
     }
-    if (next.kind === 'centripetal') {
-      // Radial constraint supplies the centripetal force; external fields act tangentially.
-      const dx = next.x - next.anchorX, dy = next.y - next.anchorY
-      const distance = Math.max(Math.hypot(dx, dy), 1)
-      const angle = Math.atan2(dy, dx)
-      const tangentX = -dy / distance, tangentY = dx / distance
-      const tangentialSpeed = next.vx * tangentX + next.vy * tangentY + (external.ax * tangentX + external.ay * tangentY) * h
-      const newAngle = angle + tangentialSpeed / next.radius * h
-      next.x = next.anchorX + Math.cos(newAngle) * next.radius
-      next.y = next.anchorY + Math.sin(newAngle) * next.radius
-      next.vx = -Math.sin(newAngle) * tangentialSpeed
-      next.vy = Math.cos(newAngle) * tangentialSpeed
-      const inward = tangentialSpeed ** 2 / next.radius
-      next.ax = -Math.cos(newAngle) * inward
-      next.ay = -Math.sin(newAngle) * inward
+    if (visual === 'thermal') {
+      // Heating adds internal energy Q=mcΔT. No external translational force.
+      next.phase = next.age * Math.sqrt(Math.max(0, 20 + p.T))
+      next.thermalAmplitude = Math.sqrt(Math.max(0, 20 + p.T)) * .35
       continue
     }
-    if (next.kind === 'magnetic') {
-      // Exact velocity rotation: a magnetic force bends velocity without doing work.
-      const angle = magnitude / 100 * h
+    if (visual === 'rotor') {
+      const inertia = p.I ?? mass * (p.r ?? 4) ** 2
+      const torque = p.τ ?? 0
+      let alpha = next.law === 'rotationalEnergy' ? 0 : torque / inertia
+      if (next.law === 'angularAcceleration' || next.law === 'torqueAngular') alpha = p.α
+      if (next.law === 'rotationalPower') alpha = p.τ / inertia
+      next.angularVelocity = (next.angularVelocity ?? 0) + alpha * h
+      next.rotation = (next.rotation ?? 0) + next.angularVelocity * h
+      next.liveValues = { ...p, α: alpha, ω: next.angularVelocity, K: .5 * inertia * next.angularVelocity ** 2,
+        P: torque * next.angularVelocity, I: inertia, τ: torque }
+      next.ax = 0; next.ay = 0
+      continue
+    }
+    if (visual === 'pendulum') {
+      const length = p.L ?? next.radius / PIXELS_PER_UNIT
+      const g = p.g ?? 9.81
+      const theta = next.theta ?? .4
+      const tangentX = Math.cos(theta), tangentY = -Math.sin(theta)
+      // Both pendulum laws are the small-angle model, with T=2π√(L/g).
+      const alpha = -g / length * theta + (extra.ax * tangentX + extra.ay * tangentY) / next.radius
+      next.omega += alpha * h; next.theta += next.omega * h
+      next.x = next.anchorX + Math.sin(next.theta) * next.radius
+      next.y = next.anchorY + Math.cos(next.theta) * next.radius
+      next.vx = Math.cos(next.theta) * next.radius * next.omega
+      next.vy = -Math.sin(next.theta) * next.radius * next.omega
+      next.ax = tangentX * alpha * next.radius; next.ay = tangentY * alpha * next.radius
+      next.liveValues = { ...p, θ: next.theta, F: -mass * g * next.theta, T: TAU * Math.sqrt(length / g), v: Math.hypot(next.vx, next.vy) / PIXELS_PER_UNIT }
+      continue
+    }
+    if (visual === 'orbit' || visual === 'gravityOrbit') {
+      const radius = next.radius
+      const theta = Math.atan2(next.y - next.anchorY, next.x - next.anchorX)
+      const tx = -Math.sin(theta), ty = Math.cos(theta)
+      next.omega += (extra.ax * tx + extra.ay * ty) / radius * h
+      const angle = theta + next.omega * h
+      next.x = next.anchorX + Math.cos(angle) * radius; next.y = next.anchorY + Math.sin(angle) * radius
+      next.vx = -Math.sin(angle) * radius * next.omega; next.vy = Math.cos(angle) * radius * next.omega
+      next.ax = -Math.cos(angle) * radius * next.omega ** 2; next.ay = -Math.sin(angle) * radius * next.omega ** 2
+      const r = radius / PIXELS_PER_UNIT, v = r * next.omega
+      next.liveValues = { ...p, r, v, ω: next.omega, F: mass * v ** 2 / r, L: mass * v * r, U: p.G ? -p.G * p.M * mass / r : p.U }
+      continue
+    }
+    if (visual === 'spring') {
+      const displacement = ((next.x - next.anchorX) * direction.x + (next.y - next.anchorY) * direction.y) / PIXELS_PER_UNIT
+      const velocity = (next.vx * direction.x + next.vy * direction.y) / PIXELS_PER_UNIT
+      const force = -p.k * (next.law === 'nonlinearSpring' ? displacement ** 3 : displacement) - (p.c ?? 0) * velocity
+      ax = direction.x * force / mass * PIXELS_PER_UNIT; ay = direction.y * force / mass * PIXELS_PER_UNIT
+      next.liveValues = { ...p, x: displacement, e: displacement, v: velocity, F: force, E: (next.law === 'nonlinearSpring' ? .25 * p.k * displacement ** 4 : .5 * p.k * displacement ** 2),
+        T: TAU * Math.sqrt(mass / p.k) }
+    }
+    if (visual === 'force' || visual === 'fall' || visual === 'energyFall') {
+      const acceleration = next.law === 'newton' && !forcePeers.length ? p.a : next.law === 'newton' ? 0
+        : ['weight', 'escapeSpeed', 'potentialEnergy'].includes(next.law) ? p.g : p.F / mass
+      ax = direction.x * acceleration * PIXELS_PER_UNIT; ay = direction.y * acceleration * PIXELS_PER_UNIT
+    }
+    if (visual === 'acceleration') { ax = direction.x * p.a * PIXELS_PER_UNIT; ay = direction.y * p.a * PIXELS_PER_UNIT }
+    if (visual === 'impulse') {
+      if (next.age <= Math.abs(p.t) + 1e-9) { ax = direction.x * p.F / mass * PIXELS_PER_UNIT; ay = direction.y * p.F / mass * PIXELS_PER_UNIT }
+      next.elapsedImpulse = Math.min(next.age, Math.abs(p.t))
+    }
+    if (visual === 'work' || visual === 'power' || visual === 'piston') {
+      const travelled = next.travelled / PIXELS_PER_UNIT
+      const force = visual === 'work' && travelled >= Math.abs(p.d) ? 0 : p.F
+      ax = direction.x * force / mass * PIXELS_PER_UNIT; ay = direction.y * force / mass * PIXELS_PER_UNIT
+      next.pistonPosition = travelled
+    }
+    if (visual === 'fluid') {
+      const volume = p.V, rho = next.law === 'density' ? p.ρ : mass / volume
+      const fluidDensity = next.law === 'density' ? (next.fluidDensity ?? 1) : p.ρ
+      const immersion = clamp((next.y - next.fluidSurface + (next.height ?? 76) / 2) / (next.height ?? 76), 0, 1)
+      const g = p.g ?? 9.81
+      ay = (g - fluidDensity * volume * g * immersion / mass) * PIXELS_PER_UNIT
+      const damping = Math.exp(-1.2 * immersion * h)
+      next.vx *= damping; next.vy *= damping
+      next.liveValues = { ...p, ρ: rho, ρfluid: fluidDensity, F: fluidDensity * volume * g * immersion, m: mass, submerged: immersion }
+    }
+    ax += extra.ax; ay += extra.ay
+    if (visual === 'magnetic') {
+      const angularSpeed = p.q * p.B / mass
+      const angle = angularSpeed * h
       const vx = next.vx * Math.cos(angle) - next.vy * Math.sin(angle)
       const vy = next.vx * Math.sin(angle) + next.vy * Math.cos(angle)
-      ax += -next.vy * magnitude / 100
-      ay += next.vx * magnitude / 100
-      next.vx = vx + external.ax * h
-      next.vy = vy + external.ay * h
+      ax += -next.vy * angularSpeed; ay += next.vx * angularSpeed
+      next.vx = vx + extra.ax * h; next.vy = vy + extra.ay * h
     } else {
-      next.vx += ax * h
-      next.vy += ay * h
+      // Exact constant-acceleration position step avoids timestep-dependent
+      // errors in s=ut+½at² while the spring still uses small substeps.
+      const oldX = next.x, oldY = next.y
+      next.x += next.vx * h + .5 * ax * h ** 2; next.y += next.vy * h + .5 * ay * h ** 2
+      next.vx += ax * h; next.vy += ay * h
+      next.travelled += Math.hypot(next.x - oldX, next.y - oldY)
     }
-    const speed = Math.hypot(next.vx, next.vy)
-    if (['friction', 'drag', 'quadraticDrag'].includes(next.kind) && speed > 0) {
-      const newSpeed = next.kind === 'friction' ? Math.max(0, speed - magnitude * h)
-        : next.kind === 'drag' ? speed * Math.exp(-magnitude / 90 * h)
-        : speed / (1 + magnitude / 10000 * speed * h)
-      const ratio = newSpeed / speed
-      ax += (ratio - 1) * next.vx / h
-      ay += (ratio - 1) * next.vy / h
-      next.vx *= ratio
-      next.vy *= ratio
+    if (visual === 'resistance' || visual === 'shear') {
+      const speed = Math.hypot(next.vx, next.vy) / PIXELS_PER_UNIT
+      const force = next.law === 'friction' ? p.μ * mass * p.g
+        : next.law === 'quadraticDrag' ? p.c * speed ** 2 : next.law === 'viscous' ? p.η * p.A * speed / p.d : p.c * speed
+      const ratio = speed ? Math.max(0, 1 - force / mass * h / speed) : 0
+      ax += (ratio - 1) * next.vx / h; ay += (ratio - 1) * next.vy / h
+      next.vx *= ratio; next.vy *= ratio
+      next.liveValues = { ...p, v: speed * ratio, F: -force }
     }
-    if (next.kind === 'wave') next.wavePhase += speed / 110 * Math.PI * 2 * h
-    next.ax = ax
-    next.ay = ay
-    const distance = Math.hypot(next.vx, next.vy) * h
-    next.travelled += distance
-    next.x += next.vx * h
-    next.y += next.vy * h
+    if (visual === 'magnetic') { next.x += next.vx * h; next.y += next.vy * h }
+    if ((visual === 'energyFall' || next.law === 'escapeSpeed') && next.y > next.originY + next.heightOrigin * PIXELS_PER_UNIT) {
+      const ground = next.originY + next.heightOrigin * PIXELS_PER_UNIT
+      next.y = 2 * ground - next.y; next.vy = -Math.abs(next.vy)
+    }
+    next.ax = ax; next.ay = ay
+    if (visual === 'magnetic') next.travelled += Math.hypot(next.vx, next.vy) * h
+    if (visual === 'wave' || visual === 'light') next.wavePhase += TAU * (p.f ?? 1) * h
+    const v = Math.hypot(next.vx, next.vy) / PIXELS_PER_UNIT
+    const signedV = (next.vx * direction.x + next.vy * direction.y) / PIXELS_PER_UNIT
+    const displacement = ((next.x - next.originX) * direction.x + (next.y - next.originY) * direction.y) / PIXELS_PER_UNIT
+    const acceleration = (ax * direction.x + ay * direction.y) / PIXELS_PER_UNIT
+    if (!['spring', 'fluid', 'resistance', 'shear'].includes(visual)) {
+      const live = { ...p, v: signedV, a: acceleration, m: mass }
+      if (['translation', 'acceleration'].includes(visual)) { live.t = next.age; live.s = displacement; live.p = mass * signedV; live.E = .5 * mass * v ** 2 }
+      if (visual === 'impulse') { live.J = p.F * next.elapsedImpulse; live.t = next.elapsedImpulse }
+      if (visual === 'force' || visual === 'fall') {
+        live.F = mass * acceleration
+        if (next.law === 'escapeSpeed') live.h = Math.max(0, displacement)
+      }
+      if (visual === 'work') { live.d = Math.min(next.travelled / PIXELS_PER_UNIT, Math.abs(p.d)); live.W = p.F * live.d }
+      if (visual === 'power') { live.P = p.F * signedV; live.W = p.F * displacement }
+      if (visual === 'energyFall') {
+        live.h = Math.max(0, next.heightOrigin - (next.y - next.originY) / PIXELS_PER_UNIT)
+        live.U = mass * p.g * live.h; live.K = .5 * mass * v ** 2
+      }
+      if (visual === 'magnetic') live.F = p.q * v * p.B
+      if (visual === 'translation') { live.p = mass * signedV; live.E = .5 * mass * v ** 2 }
+      if (next.outputSymbol && next.inputSymbols && next.law !== 'escapeSpeed') {
+        // Live outputs are evaluated from the same state used by the solver.
+        const model = modelFor(next.law)
+        if (model?.rules[next.outputSymbol]) live[next.outputSymbol] = model.rules[next.outputSymbol](live)
+      }
+      next.liveValues = live
+    }
   }
   return next
 }
 
-export function changeArrow(item, directionX, directionY, magnitude) {
-  const next = { ...item, directionX, directionY, magnitude }
-  const speed = Math.max(Math.hypot(item.vx, item.vy), 100)
-  if (['newton', 'weight', 'electric', 'work', 'power'].includes(item.kind)) {
-    if (item.outputSymbol === 'F' && item.parameters?.F === undefined) {
-      next.outputValue = magnitude
-      next.forceValue = magnitude
-      next.accelerationValue = magnitude / Math.max(item.massValue ?? 1, .01)
-      next.arrowValue = magnitude
-      next.magnitude = magnitude
-      return next
+export function resolveWorldCollisions(items, { width = 1200, floor = 660, restitution = .72 } = {}) {
+  const next = items.map(item => ({ ...item }))
+  for (const item of next) {
+    if (!isCollidable(item)) continue
+    const left = (item.width ?? 76) / 2, right = Math.max(left, width - left)
+    const top = (item.height ?? 76) / 2, bottom = Math.max(top, floor - (item.height ?? 76) / 2)
+    if (item.x < left || item.x > right) { item.x = clamp(item.x, left, right); item.vx *= -restitution; item.collisionFlash = .18 }
+    if (item.y < top || item.y > bottom) { item.y = clamp(item.y, top, bottom); item.vy *= -restitution; item.collisionFlash = .18 }
+  }
+  for (let i = 0; i < next.length; i++) for (let j = i + 1; j < next.length; j++) {
+    const a = next[i], b = next[j]
+    if (!isCollidable(a) || !isCollidable(b) || (a.interactionGroup && a.interactionGroup === b.interactionGroup)) continue
+    const dx = b.x - a.x, dy = b.y - a.y, distance = Math.max(Math.hypot(dx, dy), .001)
+    const contact = collisionRadius(a) + collisionRadius(b)
+    if (distance >= contact) continue
+    const nx = distance === .001 ? 1 : dx / distance, ny = dy / distance
+    const ia = 1 / Math.max(a.massValue ?? 1, .001), ib = 1 / Math.max(b.massValue ?? 1, .001)
+    const overlap = contact - distance
+    a.x -= nx * overlap * ia / (ia + ib); a.y -= ny * overlap * ia / (ia + ib)
+    b.x += nx * overlap * ib / (ia + ib); b.y += ny * overlap * ib / (ia + ib)
+    const velocity = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
+    if (velocity < 0) {
+      const impulse = -(1 + restitution) * velocity / (ia + ib)
+      a.vx -= nx * impulse * ia; a.vy -= ny * impulse * ia
+      b.vx += nx * impulse * ib; b.vy += ny * impulse * ib
     }
-    if (item.parameters?.F !== undefined) {
-      const updated = refreshFormula({ ...next, parameters: { ...item.parameters, F: magnitude } })
-      updated.directionX = directionX
-      updated.directionY = directionY
-      if (item.kind === 'work') {
-        updated.travelled = 0
-        updated.vx = 0
-        updated.vy = 0
-      }
-      return updated
-    }
-    next.forceValue = magnitude
-    next.arrowValue = magnitude
-  }
-  if (item.kind === 'spring' && item.outputSymbol === 'F') {
-    // The spring arrow is the force readout. Its length controls k while the
-    // signed force still follows F = -kx (or the nonlinear/damped variant).
-    const updated = refreshFormula({ ...next, parameters: { ...item.parameters, k: magnitude } })
-    updated.directionX = directionX
-    updated.directionY = directionY
-    updated.anchorX = item.x + directionX * 60
-    updated.anchorY = item.y + directionY * 60
-    return updated
-  }
-  if (['kinematics', 'impulse', 'fluid', 'torque'].includes(item.kind) && item.inputSymbols?.length) {
-    const symbol = item.inputSymbols.includes('a') ? 'a'
-      : item.inputSymbols.includes('F') ? 'F'
-        : item.inputSymbols.includes('g') ? 'g' : item.inputSymbols[0]
-    const updated = refreshFormula({ ...next, parameters: { ...item.parameters, [symbol]: magnitude } })
-    updated.directionX = directionX
-    updated.directionY = directionY
-    if (item.kind === 'impulse') updated.impulseApplied = false
-    return updated
-  }
-  if (item.kind === 'work') {
-    // Re-aiming the work arrow starts a fresh displacement run with the new force.
-    next.travelled = 0
-    next.vx = 0
-    next.vy = 0
-  } else if (item.kind === 'momentum' || item.kind === 'wave' || item.kind === 'kineticEnergy') {
-    const newSpeed = item.kind === 'kineticEnergy' ? Math.sqrt(200 * magnitude) : magnitude * 1.6
-    next.vx = directionX * newSpeed
-    next.vy = directionY * newSpeed
-  } else if (item.kind === 'magnetic') {
-    next.vx = directionY * speed
-    next.vy = -directionX * speed
-  } else if (['drag', 'quadraticDrag', 'friction'].includes(item.kind)) {
-    next.vx = -directionX * speed
-    next.vy = -directionY * speed
-  } else if (item.kind === 'centripetal') {
-    next.anchorX = item.x + directionX * item.radius
-    next.anchorY = item.y + directionY * item.radius
-    next.vx = directionY * Math.sqrt(magnitude * item.radius)
-    next.vy = -directionX * Math.sqrt(magnitude * item.radius)
-  } else if (item.kind === 'spring') {
-    next.anchorX = item.x + directionX * 60
-    next.anchorY = item.y + directionY * 60
-  } else if (item.kind === 'pendulum') {
-    // The restoring-force direction follows the pendulum constraint; dragging sets g.
-    next.magnitude = magnitude
+    a.collisionFlash = .18; b.collisionFlash = .18
   }
   return next
+}
+
+// Reconfiguration follows a user edit. Constant-speed, radius and period inputs
+// alter the actual motion, rather than just changing a cosmetic arrow.
+export function changeParameter(item, symbol, value) {
+  const updated = refreshFormula({ ...item, parameters: { ...(item.parameters ?? {}), [symbol]: value } })
+  updated.liveValues = { ...updated.values }
+  const p = updated.values, visual = updated.visual
+  if (['translation', 'wave', 'light', 'resistance', 'shear', 'magnetic'].includes(visual) && p.v !== undefined) {
+    updated.vx = updated.directionX * p.v * PIXELS_PER_UNIT; updated.vy = updated.directionY * p.v * PIXELS_PER_UNIT
+  }
+  if (visual === 'acceleration' && symbol === 'u') {
+    updated.vx = updated.directionX * p.u * PIXELS_PER_UNIT; updated.vy = updated.directionY * p.u * PIXELS_PER_UNIT
+    updated.age = 0; updated.originX = updated.x; updated.originY = updated.y
+  }
+  if (visual === 'spring' && ['x', 'e'].includes(symbol)) {
+    updated.anchorX = updated.x - (p.x ?? p.e) * PIXELS_PER_UNIT * updated.directionX
+    updated.anchorY = updated.y - (p.x ?? p.e) * PIXELS_PER_UNIT * updated.directionY
+    updated.vx = 0; updated.vy = 0
+  }
+  if (visual === 'orbit' || visual === 'gravityOrbit' || visual === 'pendulum') {
+    const radius = clamp(Math.abs(p.r ?? p.L ?? updated.radius / PIXELS_PER_UNIT) * PIXELS_PER_UNIT, 24, 300)
+    const dx = updated.x - updated.anchorX, dy = updated.y - updated.anchorY
+    const distance = Math.max(Math.hypot(dx, dy), .001)
+    updated.anchorX = updated.x - dx / distance * radius; updated.anchorY = updated.y - dy / distance * radius; updated.radius = radius
+    if (visual !== 'pendulum') updated.omega = visual === 'gravityOrbit' ? Math.sqrt(p.G * p.M / Math.abs(p.r) ** 3) : p.ω ?? p.v / p.r
+  }
+  if (visual === 'rotor' && symbol === 'ω') updated.angularVelocity = p.ω
+  if (visual === 'rotor' && updated.law === 'rotationalEnergy') updated.angularVelocity = p.ω
+  if (visual === 'pendulum' && symbol === 'θ') {
+    updated.theta = p.θ; updated.omega = 0
+    updated.anchorX = updated.x - Math.sin(p.θ) * updated.radius
+    updated.anchorY = updated.y - Math.cos(p.θ) * updated.radius
+  }
+  if (visual === 'spring' && updated.law === 'springEnergy' && symbol === 'E') {
+    updated.anchorX = updated.x - p.e * PIXELS_PER_UNIT * updated.directionX
+    updated.anchorY = updated.y - p.e * PIXELS_PER_UNIT * updated.directionY
+  }
+  if (visual === 'impulse') { updated.age = 0; updated.elapsedImpulse = 0 }
+  if (visual === 'work') { updated.travelled = 0; updated.originX = updated.x; updated.originY = updated.y; updated.vx = 0; updated.vy = 0 }
+  return updated
+}
+
+export function arrowInputFor(item) {
+  const available = item.inputSymbols ?? []
+  const priorities = isSpringSource(item) ? ['k', 'x', 'e', 'm', 'T']
+    : item.law === 'newton' ? ['a', 'F', 'm']
+      : item.visual === 'rotor' ? ['τ', 'α', 'F', 'ω', 'r', 'I', 'm']
+        : ['F', 'a', 'g', 'v', 'u', 'E', 'B', 'G', 'M', 'k', 'ρ', 'h', 'J', 'p', 'f', 'λ', 'η', 'μ', 'c', 'r', 'A', 't']
+  return priorities.find(symbol => available.includes(symbol)) ?? available.find(symbol => symbol !== 'π')
+}
+export function changeArrow(item, x, y, value) {
+  const prepared = item.values ? item : refreshFormula(item)
+  const symbol = prepared.law === 'kineticEnergy' ? 'E' : arrowInputFor(prepared)
+  if (!symbol) return prepared
+  let updated
+  if (prepared.law === 'kineticEnergy' && symbol === 'E') {
+    // The kinetic-energy arrow expresses energy magnitude; its visible speed
+    // follows v=√(2E/m), so quadrupling the arrow length doubles the speed.
+    const ratio = prepared.magnitude > 0 ? Math.max(value, .001) / prepared.magnitude : 1
+    const targetEnergy = Math.max((prepared.outputValue ?? 0) * ratio, .001)
+    const targetSpeed = Math.sqrt(2 * targetEnergy / Math.max(prepared.values?.m ?? 1, .001))
+    updated = changeParameter(prepared, 'v', targetSpeed)
+  } else {
+    const amount = Math.max(value, .001) * ((prepared.parameters?.[symbol] ?? 1) < 0 ? -1 : 1)
+    updated = changeParameter(prepared, symbol, amount)
+  }
+  updated.magnitude = value
+  updated.directionX = x; updated.directionY = y
+  if (isSpringSource(updated)) {
+    const displacement = Math.hypot(updated.x - updated.anchorX, updated.y - updated.anchorY)
+    updated.anchorX = updated.x - x * displacement; updated.anchorY = updated.y - y * displacement
+  }
+  if (['translation', 'wave', 'light', 'resistance', 'shear', 'magnetic'].includes(updated.visual)) {
+    const speed = Math.hypot(updated.vx, updated.vy)
+    updated.vx = x * speed; updated.vy = y * speed
+  }
+  return updated
+}
+
+export function readoutsFor(item) {
+  const p = { ...(item.values ?? {}), ...(item.liveValues ?? {}) }
+  const output = item.outputSymbol
+  const extras = {
+    acceleration: ['v', 's', 't'], translation: ['v', 'p', 'E'], spring: ['F', 'v', 'E', 'T'], pendulum: ['θ', 'T', 'v'],
+    rotor: ['ω', 'α', 'K'], orbit: ['v', 'ω', 'L'], gravityOrbit: ['r', 'v', 'U'], energyFall: ['h', 'U', 'K'],
+    impulse: ['J', 'v'], work: ['d', 'W', 'v'], power: ['P', 'W', 'v'], force: ['v'], fall: ['v'],
+    magnetic: ['v', 'F'], fluid: ['F', 'ρfluid'], shear: ['v', 'F'], resistance: ['v', 'F'],
+    circuit: ['P', 'Q'], thermal: ['ΔT'], wave: ['v', 'λ'], light: ['λ'], hydrostatic: ['P'],
+  }[item.visual] ?? []
+  const computed = { ...p }
+  if (item.visual === 'circuit') { computed.P = item.values.V * item.values.I; computed.Q = item.energyReleased ?? 0 }
+  if (item.visual === 'thermal') computed['ΔT'] = item.values.T
+  if (item.visual === 'light') computed.λ = 8 / item.values.f
+  const keys = [...new Set([output, ...(item.inputSymbols ?? []), ...extras])].filter(Boolean)
+  return keys.filter(key => Number.isFinite(computed[key])).map(key => ({ symbol: key, value: computed[key], adjustable: item.inputSymbols?.includes(key) && key !== 'π' }))
 }
