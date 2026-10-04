@@ -1,6 +1,6 @@
 # Equation World
 
-> A physics sandbox where equations become executable laws.
+> A physics sandbox where equations become executable laws. Made entirely by AI
 
 [![Deploy to GitHub Pages](https://github.com/TypeThe0ry/AwesomeEquations/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/TypeThe0ry/AwesomeEquations/actions/workflows/deploy-pages.yml) · [Live demo](https://typethe0ry.github.io/AwesomeEquations/)
 
