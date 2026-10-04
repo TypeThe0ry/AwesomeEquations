@@ -4,7 +4,7 @@ import { Trash } from '@phosphor-icons/react'
 import './styles.css'
 import { clamp, normalize, resolveFormula, refreshFormula, defaultDirection, resetMotion, isField, isMass, isDynamic, isDirectional, isSpringSource, fieldAutoScale, fieldScaleFor, stepItem, changeArrow, resolveWorldCollisions } from './physics.js'
 
-const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'x', 't', 'W', 'P', 'p', 'E', 'e', 'k', 'L', 'd', 'r', 'U', 'R', 'I', 'q', 'B', 'G', 'c', 'f', 'μ', 'ρ', 'ω', 'λ', 'θ', 'Q', 'T', '½', 'h', 'n', 'C', 'S', 'V']
+const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'u', 'x', 's', 't', 'W', 'P', 'p', 'J', 'E', 'K', 'e', 'k', 'L', 'd', 'r', 'U', 'R', 'I', 'q', 'B', 'G', 'c', 'f', 'μ', 'ρ', 'ω', 'λ', 'θ', 'τ', 'α', 'Q', 'T', '½', 'h', 'n', 'A', 'V', 'π', 'η', 'C', 'S']
 const FONT = 76
 const MIN_MAGNITUDE = 28
 const MAX_MAGNITUDE = 360
@@ -206,7 +206,10 @@ function App() {
           const attachedMass = current.some((other) => other.attachedTo === item.id)
           if (isSpringSource(item) && attachedMass) return { ...item, vx: 0, vy: 0 }
           const spring = current.find((other) => other.id === item.attachedTo && isSpringSource(other))
-          const updated = stepItem(item, dt, fields, spring)
+          const peers = item.interactionGroup
+            ? current.filter((other) => other.interactionGroup === item.interactionGroup)
+            : []
+          const updated = stepItem(item, dt, fields, spring, peers)
           updated.collisionFlash = Math.max(0, (item.collisionFlash ?? 0) - dt)
           updated.trail = item.trail.filter((point) => now - point.time < (item.kind === 'wave' ? 1800 : 700))
           if (isDynamic(updated) && Math.hypot(updated.vx, updated.vy) > 8 && (!updated.trail.length || now - updated.trail.at(-1).time > 32)) {
@@ -246,6 +249,19 @@ function App() {
       context.clearRect(0, 0, width, height)
       itemsRef.current.forEach((item) => {
         if (item.held) return
+        if (item.interactionGroup) {
+          const partner = itemsRef.current.find((candidate) => candidate.interactionGroup === item.interactionGroup && candidate.id !== item.id)
+          if (partner) {
+            context.save()
+            context.strokeStyle = 'rgba(87, 80, 70, .18)'
+            context.setLineDash([3, 7])
+            context.beginPath()
+            context.moveTo(item.x, item.y)
+            context.lineTo(partner.x, partner.y)
+            context.stroke()
+            context.restore()
+          }
+        }
         const attachedMass = itemsRef.current.find((candidate) => candidate.attachedTo === item.id)
         if (isSpringSource(item)) {
           const endpoint = attachedMass ?? { x: item.x + item.width / 2 + 150, y: item.y }
@@ -307,7 +323,7 @@ function App() {
         context.lineWidth = 1.1
         context.beginPath(); context.moveTo(startX, startY); context.lineTo(endX, endY); context.stroke()
         context.beginPath(); context.moveTo(endX, endY); context.lineTo(endX - directionX * 11 - directionY * 5, endY - directionY * 11 + directionX * 5); context.lineTo(endX - directionX * 11 + directionY * 5, endY - directionY * 11 - directionX * 5); context.closePath(); context.fill()
-        const label = { newton: 'a', momentum: 'p', kineticEnergy: 'E', wave: 'v' }[item.kind] ?? 'F'
+        const label = { newton: 'a', momentum: 'p', kineticEnergy: 'E', wave: 'v', kinematics: item.outputSymbol ?? 'v', impulse: 'J', torque: 'τ' }[item.kind] ?? 'F'
         const arrowValue = item.kind === 'newton' ? item.accelerationValue : item.arrowValue ?? item.outputValue
         const arrowText = `${label} = ${formatValue(arrowValue)}`
         context.font = 'italic 15px Times New Roman'
@@ -435,7 +451,7 @@ function App() {
   return <main className="sandbox" onPointerDown={beginCanvas} onPointerMove={move} onPointerUp={release} onPointerCancel={(event) => release(event, true)}>
     <canvas ref={canvas} className="effects" aria-hidden="true" />
     <div className="floor" aria-hidden="true" />
-    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize }} data-equation={item.text} data-kind={item.kind} data-output={item.outputSymbol} data-output-value={item.outputValue} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item, (event, symbol) => beginParameter(event, item.id, symbol))}</span></div>)}
+    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize, transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}rad)` }} data-equation={item.text} data-kind={item.kind} data-output={item.outputSymbol} data-output-value={item.outputValue} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-interaction-group={item.interactionGroup} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item, (event, symbol) => beginParameter(event, item.id, symbol))}</span></div>)}
     <aside className="palette" ref={palette}>{SYMBOLS.map((symbol) => <button key={symbol} type="button" className="symbol" onPointerDown={(event) => start(event, symbol)} onClick={(event) => clickPalette(event, symbol)}>{symbol}</button>)}</aside>
     <button className="trash" ref={trash} type="button" aria-label="删除符号" onClick={() => setItems([])}><Trash size={40} weight="light" /></button>
   </main>
@@ -447,6 +463,15 @@ function mergeNear(items, id) {
   const target = items.find((other) => other.id !== id && Math.abs(other.x - current.x) < (other.width + current.width) / 2 + 28 && Math.abs(other.y - current.y) < 50)
   if (!target) return items.map((item) => item.id === id
     ? { ...item, ...resetMotion(item, { width: window.innerWidth, height: window.innerHeight }), held: false } : item)
+  if (current.law && target.law) {
+    // Completed equations remain separate objects and become a coupled law set.
+    // This makes it possible to place F=ma beside F=-kx and let both laws act
+    // on the same visible body without destroying either equation.
+    const interactionGroup = current.interactionGroup ?? target.interactionGroup ?? `interaction-${current.id}-${target.id}`
+    return items.map((item) => item.id === current.id || item.id === target.id
+      ? { ...item, interactionGroup, interactionBody: true, held: false, ...resetMotion(item, { width: window.innerWidth, height: window.innerHeight }) }
+      : item)
+  }
   const first = current.x < target.x ? current : target
   const second = first === current ? target : current
   const parts = (first.parts ?? first.text) + (second.parts ?? second.text)
