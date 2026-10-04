@@ -6,6 +6,11 @@ export const EQUATIONS = [
   { id: 'newton', text: 'F=ma', recipe: 'Fma', kind: 'newton' },
   { id: 'weight', text: 'F=mg', recipe: 'Fmg', kind: 'weight' },
   { id: 'gravity', text: 'F=GMm/r²', recipe: 'FGMmr', kind: 'gravity', aliases: ['F=GMm/R²'], recipes: ['FGMmR', 'FGMmrr', 'FGMmRR'] },
+  { id: 'velocityTime', text: 'v=u+at', recipe: 'vuat', kind: 'kinematics' },
+  { id: 'displacementTime', text: 's=vt', recipe: 'svt', kind: 'kinematics' },
+  { id: 'acceleratedDisplacement', text: 's=ut+½at²', recipe: 'sut½a', kind: 'kinematics' },
+  { id: 'escapeSpeed', text: 'v²=2gh', recipe: 'vgh', kind: 'kinematics' },
+  { id: 'impulse', text: 'J=Ft', recipe: 'JFt', kind: 'impulse' },
   { id: 'spring', text: 'F=−kx', recipe: 'Fkx', kind: 'spring' },
   { id: 'dampedSpring', text: 'F=−kx−cv', recipe: 'Fkxcv', kind: 'spring' },
   { id: 'springEnergy', text: '½ke²', recipe: '½ke', kind: 'springEnergy', recipes: ['½kE'] },
@@ -20,10 +25,29 @@ export const EQUATIONS = [
   { id: 'nonlinearSpring', text: 'F=−kx³', recipe: 'Fkxxx', kind: 'spring' },
   { id: 'momentum', text: 'p=mv', recipe: 'pmv', kind: 'momentum' },
   { id: 'kineticEnergy', text: 'E=½mv²', recipe: 'E½mv', kind: 'kineticEnergy', recipes: ['E½mvv'] },
+  { id: 'potentialEnergy', text: 'U=mgh', recipe: 'Umgh', kind: 'law' },
+  { id: 'gravityPotential', text: 'U=−GMm/r', recipe: 'UGMmr', kind: 'law' },
+  { id: 'angularMomentum', text: 'L=mvr', recipe: 'Lmvr', kind: 'law' },
+  { id: 'torqueForce', text: 'τ=Fr', recipe: 'τFr', kind: 'torque' },
+  { id: 'torqueAngular', text: 'τ=Iα', recipe: 'τIα', kind: 'torque' },
+  { id: 'momentInertia', text: 'I=mr²', recipe: 'Imr', kind: 'law' },
+  { id: 'angularVelocity', text: 'ω=v/r', recipe: 'ωvr', kind: 'law' },
+  { id: 'angularAcceleration', text: 'α=τ/I', recipe: 'ατI', kind: 'law' },
+  { id: 'rotationalEnergy', text: 'K=½Iω²', recipe: 'K½Iω', kind: 'law', recipes: ['K½Iωω'] },
+  { id: 'rotationalPower', text: 'P=τω', recipe: 'Pτω', kind: 'law' },
+  { id: 'springPeriod', text: 'T²=mk', recipe: 'Tmk', kind: 'law' },
+  { id: 'pendulumPeriod', text: 'T²=L/g', recipe: 'TLg', kind: 'law' },
   { id: 'work', text: 'W=Fd', recipe: 'WFd', kind: 'work' },
   { id: 'power', text: 'P=Fv', recipe: 'PFv', kind: 'power' },
   { id: 'wave', text: 'v=fλ', recipe: 'vfλ', kind: 'wave' },
   { id: 'coulomb', text: 'F=kQq/r²', recipe: 'FkQqr', kind: 'coulomb', aliases: ['F=kQq/R²'], recipes: ['FkQqR', 'FkQqrr', 'FkQqRR'] },
+  { id: 'pressure', text: 'P=F/A', recipe: 'PFA', kind: 'law' },
+  { id: 'density', text: 'ρ=m/V', recipe: 'ρmV', kind: 'law' },
+  { id: 'fluidPressure', text: 'P=ρgh', recipe: 'Pρgh', kind: 'law' },
+  { id: 'buoyancy', text: 'F=ρVg', recipe: 'FρVg', kind: 'fluid' },
+  { id: 'viscous', text: 'F=ηAv/d', recipe: 'FηAvd', kind: 'fluid' },
+  { id: 'circleArea', text: 'A=πr²', recipe: 'Aπr', kind: 'law' },
+  { id: 'volume', text: 'V=Ah', recipe: 'VAh', kind: 'law' },
   // Recognized relations retained from the original sandbox, without invented forces.
   { id: 'ohm', text: 'V=IR', recipe: 'VIR', kind: 'law' },
   { id: 'electricPower', text: 'P=VI', recipe: 'PVI', kind: 'law' },
@@ -51,6 +75,36 @@ const MODELS = {
     formats: { F: 'F=GMm/r²', a: 'a=GM/r²' },
     defaults: { F: 100, G: 100, M: 100, m: 1, r: 10, a: 100 },
     rules: { F: p => p.G * p.M * p.m / safeDenom(p.r ** 2), a: p => p.G * p.M / safeDenom(p.r ** 2) },
+  },
+  velocityTime: {
+    outputs: { v: ['u', 'a', 't'], u: ['v', 'a', 't'], a: ['v', 'u', 't'], t: ['v', 'u', 'a'] },
+    formats: { v: 'v=u+at', u: 'u=v−at', a: 'a=(v−u)/t', t: 't=(v−u)/a' },
+    defaults: { v: 100, u: 0, a: 100, t: 1 },
+    rules: { v: p => p.u + p.a * p.t, u: p => p.v - p.a * p.t, a: p => (p.v - p.u) / safeDenom(p.t), t: p => (p.v - p.u) / safeDenom(p.a) },
+  },
+  displacementTime: {
+    outputs: { s: ['v', 't'], v: ['s', 't'], t: ['s', 'v'] },
+    formats: { s: 's=vt', v: 'v=s/t', t: 't=s/v' },
+    defaults: { s: 100, v: 100, t: 1 },
+    rules: { s: p => p.v * p.t, v: p => p.s / safeDenom(p.t), t: p => p.s / safeDenom(p.v) },
+  },
+  acceleratedDisplacement: {
+    outputs: { s: ['u', 'a', 't'], u: ['s', 'a', 't'], a: ['s', 'u', 't'], t: ['s', 'u', 'a'] },
+    formats: { s: 's=ut+½at²', u: 'u=(s−½at²)/t', a: 'a=2(s−ut)/t²', t: 't=√(2s/a)' },
+    defaults: { s: 50, u: 0, a: 100, t: 1 },
+    rules: { s: p => p.u * p.t + .5 * p.a * p.t ** 2, u: p => (p.s - .5 * p.a * p.t ** 2) / safeDenom(p.t), a: p => 2 * (p.s - p.u * p.t) / safeDenom(p.t ** 2), t: p => Math.sqrt(Math.max(0, 2 * p.s / safeDenom(p.a))) },
+  },
+  escapeSpeed: {
+    outputs: { v: ['g', 'h'], g: ['v', 'h'], h: ['v', 'g'] },
+    formats: { v: 'v²=2gh', g: 'g=v²/2h', h: 'h=v²/2g' },
+    defaults: { v: 100, g: 100, h: 50 },
+    rules: { v: p => Math.sqrt(Math.max(0, 2 * p.g * p.h)), g: p => p.v ** 2 / safeDenom(2 * p.h), h: p => p.v ** 2 / safeDenom(2 * p.g) },
+  },
+  impulse: {
+    outputs: { J: ['F', 't'], F: ['J', 't'], t: ['J', 'F'] },
+    formats: { J: 'J=Ft', F: 'F=J/t', t: 't=J/F' },
+    defaults: { J: 100, F: 100, t: 1 },
+    rules: { J: p => p.F * p.t, F: p => p.J / safeDenom(p.t), t: p => p.J / safeDenom(p.F) },
   },
   spring: {
     outputs: { F: ['k', 'x'], x: ['F', 'k'], k: ['F', 'x'] },
@@ -136,6 +190,78 @@ const MODELS = {
     defaults: { E: 100, m: 1, v: 10 },
     rules: { E: p => .5 * p.m * p.v ** 2, m: p => 2 * p.E / safeDenom(p.v ** 2), v: p => Math.sqrt(Math.max(0, 2 * p.E / safeDenom(p.m))) },
   },
+  potentialEnergy: {
+    outputs: { U: ['m', 'g', 'h'], m: ['U', 'g', 'h'], g: ['U', 'm', 'h'], h: ['U', 'm', 'g'] },
+    formats: { U: 'U=mgh', m: 'm=U/gh', g: 'g=U/mh', h: 'h=U/mg' },
+    defaults: { U: 100, m: 1, g: 100, h: 1 },
+    rules: { U: p => p.m * p.g * p.h, m: p => p.U / safeDenom(p.g * p.h), g: p => p.U / safeDenom(p.m * p.h), h: p => p.U / safeDenom(p.m * p.g) },
+  },
+  gravityPotential: {
+    outputs: { U: ['G', 'M', 'm', 'r'], r: ['G', 'M', 'm', 'U'] },
+    formats: { U: 'U=−GMm/r', r: 'r=−GMm/U' },
+    defaults: { U: -100, G: 100, M: 100, m: 1, r: 100 },
+    rules: { U: p => -p.G * p.M * p.m / safeDenom(p.r), r: p => -p.G * p.M * p.m / safeDenom(p.U) },
+  },
+  angularMomentum: {
+    outputs: { L: ['m', 'v', 'r'], m: ['L', 'v', 'r'], v: ['L', 'm', 'r'], r: ['L', 'm', 'v'] },
+    formats: { L: 'L=mvr', m: 'm=L/vr', v: 'v=L/mr', r: 'r=L/mv' },
+    defaults: { L: 100, m: 1, v: 10, r: 10 },
+    rules: { L: p => p.m * p.v * p.r, m: p => p.L / safeDenom(p.v * p.r), v: p => p.L / safeDenom(p.m * p.r), r: p => p.L / safeDenom(p.m * p.v) },
+  },
+  torqueForce: {
+    outputs: { τ: ['F', 'r'], F: ['τ', 'r'], r: ['τ', 'F'] },
+    formats: { τ: 'τ=Fr', F: 'F=τ/r', r: 'r=τ/F' },
+    defaults: { τ: 100, F: 100, r: 1 },
+    rules: { τ: p => p.F * p.r, F: p => p.τ / safeDenom(p.r), r: p => p.τ / safeDenom(p.F) },
+  },
+  torqueAngular: {
+    outputs: { τ: ['I', 'α'], I: ['τ', 'α'], α: ['τ', 'I'] },
+    formats: { τ: 'τ=Iα', I: 'I=τ/α', α: 'α=τ/I' },
+    defaults: { τ: 100, I: 1, α: 100 },
+    rules: { τ: p => p.I * p.α, I: p => p.τ / safeDenom(p.α), α: p => p.τ / safeDenom(p.I) },
+  },
+  momentInertia: {
+    outputs: { I: ['m', 'r'], m: ['I', 'r'], r: ['I', 'm'] },
+    formats: { I: 'I=mr²', m: 'm=I/r²', r: 'r=√(I/m)' },
+    defaults: { I: 100, m: 1, r: 10 },
+    rules: { I: p => p.m * p.r ** 2, m: p => p.I / safeDenom(p.r ** 2), r: p => Math.sqrt(Math.max(0, p.I / safeDenom(p.m))) },
+  },
+  angularVelocity: {
+    outputs: { ω: ['v', 'r'], v: ['ω', 'r'], r: ['v', 'ω'] },
+    formats: { ω: 'ω=v/r', v: 'v=ωr', r: 'r=v/ω' },
+    defaults: { ω: 10, v: 100, r: 10 },
+    rules: { ω: p => p.v / safeDenom(p.r), v: p => p.ω * p.r, r: p => p.v / safeDenom(p.ω) },
+  },
+  angularAcceleration: {
+    outputs: { α: ['τ', 'I'], τ: ['I', 'α'], I: ['τ', 'α'] },
+    formats: { α: 'α=τ/I', τ: 'τ=Iα', I: 'I=τ/α' },
+    defaults: { α: 100, τ: 100, I: 1 },
+    rules: { α: p => p.τ / safeDenom(p.I), τ: p => p.I * p.α, I: p => p.τ / safeDenom(p.α) },
+  },
+  rotationalEnergy: {
+    outputs: { K: ['I', 'ω'], I: ['K', 'ω'], ω: ['K', 'I'] },
+    formats: { K: 'K=½Iω²', I: 'I=2K/ω²', ω: 'ω=√(2K/I)' },
+    defaults: { K: 100, I: 1, ω: 10 },
+    rules: { K: p => .5 * p.I * p.ω ** 2, I: p => 2 * p.K / safeDenom(p.ω ** 2), ω: p => Math.sqrt(Math.max(0, 2 * p.K / safeDenom(p.I))) },
+  },
+  rotationalPower: {
+    outputs: { P: ['τ', 'ω'], τ: ['P', 'ω'], ω: ['P', 'τ'] },
+    formats: { P: 'P=τω', τ: 'τ=P/ω', ω: 'ω=P/τ' },
+    defaults: { P: 100, τ: 100, ω: 1 },
+    rules: { P: p => p.τ * p.ω, τ: p => p.P / safeDenom(p.ω), ω: p => p.P / safeDenom(p.τ) },
+  },
+  springPeriod: {
+    outputs: { T: ['m', 'k'], m: ['T', 'k'], k: ['T', 'm'] },
+    formats: { T: 'T²=mk', m: 'm=T²/k', k: 'k=T²/m' },
+    defaults: { T: 1, m: 1, k: 1 },
+    rules: { T: p => Math.sqrt(Math.max(0, p.m * p.k)), m: p => p.T ** 2 / safeDenom(p.k), k: p => p.T ** 2 / safeDenom(p.m) },
+  },
+  pendulumPeriod: {
+    outputs: { T: ['L', 'g'], L: ['T', 'g'], g: ['T', 'L'] },
+    formats: { T: 'T²=L/g', L: 'L=T²g', g: 'g=L/T²' },
+    defaults: { T: 1, L: 1, g: 100 },
+    rules: { T: p => Math.sqrt(Math.max(0, p.L / safeDenom(p.g))), L: p => p.T ** 2 * p.g, g: p => p.L / safeDenom(p.T ** 2) },
+  },
   work: {
     outputs: { W: ['F', 'd'], F: ['W', 'd'], d: ['W', 'F'] },
     formats: { W: 'W=Fd', F: 'F=W/d', d: 'd=W/F' },
@@ -159,6 +285,48 @@ const MODELS = {
     formats: { F: 'F=kQq/r²', q: 'q=Fr²/kQ' },
     defaults: { F: 100, k: 100, Q: 1, q: 1, r: 1 },
     rules: { F: p => p.k * p.Q * p.q / safeDenom(p.r ** 2), q: p => p.F * p.r ** 2 / safeDenom(p.k * p.Q) },
+  },
+  pressure: {
+    outputs: { P: ['F', 'A'], F: ['P', 'A'], A: ['F', 'P'] },
+    formats: { P: 'P=F/A', F: 'F=PA', A: 'A=F/P' },
+    defaults: { P: 100, F: 100, A: 1 },
+    rules: { P: p => p.F / safeDenom(p.A), F: p => p.P * p.A, A: p => p.F / safeDenom(p.P) },
+  },
+  density: {
+    outputs: { ρ: ['m', 'V'], m: ['ρ', 'V'], V: ['m', 'ρ'] },
+    formats: { ρ: 'ρ=m/V', m: 'm=ρV', V: 'V=m/ρ' },
+    defaults: { ρ: 1, m: 1, V: 1 },
+    rules: { ρ: p => p.m / safeDenom(p.V), m: p => p.ρ * p.V, V: p => p.m / safeDenom(p.ρ) },
+  },
+  fluidPressure: {
+    outputs: { P: ['ρ', 'g', 'h'], ρ: ['P', 'g', 'h'], h: ['P', 'ρ', 'g'] },
+    formats: { P: 'P=ρgh', ρ: 'ρ=P/gh', h: 'h=P/ρg' },
+    defaults: { P: 100, ρ: 1, g: 100, h: 1 },
+    rules: { P: p => p.ρ * p.g * p.h, ρ: p => p.P / safeDenom(p.g * p.h), h: p => p.P / safeDenom(p.ρ * p.g) },
+  },
+  buoyancy: {
+    outputs: { F: ['ρ', 'V', 'g'], ρ: ['F', 'V', 'g'], V: ['F', 'ρ', 'g'] },
+    formats: { F: 'F=ρVg', ρ: 'ρ=F/Vg', V: 'V=F/ρg' },
+    defaults: { F: 100, ρ: 1, V: 1, g: 100 },
+    rules: { F: p => p.ρ * p.V * p.g, ρ: p => p.F / safeDenom(p.V * p.g), V: p => p.F / safeDenom(p.ρ * p.g) },
+  },
+  viscous: {
+    outputs: { F: ['η', 'A', 'v', 'd'], η: ['F', 'A', 'v', 'd'] },
+    formats: { F: 'F=ηAv/d', η: 'η=Fd/Av' },
+    defaults: { F: 100, η: 1, A: 1, v: 100, d: 1 },
+    rules: { F: p => p.η * p.A * p.v / safeDenom(p.d), η: p => p.F * p.d / safeDenom(p.A * p.v) },
+  },
+  circleArea: {
+    outputs: { A: ['π', 'r'], r: ['A', 'π'] },
+    formats: { A: 'A=πr²', r: 'r=√(A/π)' },
+    defaults: { A: 314, π: Math.PI, r: 10 },
+    rules: { A: p => p.π * p.r ** 2, r: p => Math.sqrt(Math.max(0, p.A / safeDenom(p.π))) },
+  },
+  volume: {
+    outputs: { V: ['A', 'h'], A: ['V', 'h'], h: ['V', 'A'] },
+    formats: { V: 'V=Ah', A: 'A=V/h', h: 'h=V/A' },
+    defaults: { V: 100, A: 10, h: 10 },
+    rules: { V: p => p.A * p.h, A: p => p.V / safeDenom(p.h), h: p => p.V / safeDenom(p.A) },
   },
   ohm: {
     outputs: { V: ['I', 'R'], I: ['V', 'R'], R: ['V', 'I'] },
@@ -196,7 +364,12 @@ function outputFromRaw(raw, model, fallback) {
   if (!model) return fallback
   const value = normalize(raw)
   const left = value.includes('=') ? value.slice(0, value.indexOf('=')) : value
-  const candidate = [...left].find((symbol) => model.outputs[symbol]) ?? [...value].find((symbol) => model.outputs[symbol])
+  // When a relation has no explicit equals sign, the first dragged symbol is
+  // the intended output. A leading constant such as ½ has no output symbol,
+  // so keep the model's default instead of accidentally choosing k or e.
+  const candidate = value.includes('=')
+    ? [...left].find((symbol) => model.outputs[symbol])
+    : (model.outputs[[...left][0]] ? [...left][0] : null)
   return candidate ?? fallback
 }
 
@@ -276,7 +449,7 @@ export const fieldAutoScale = (item) => clamp(Math.sqrt(Math.abs(item.fieldForce
 export const fieldScaleFor = (item) => clamp((item.fieldScale ?? 1) * fieldAutoScale(item), .35, 4)
 export const isSpringSource = (item) => ['spring', 'springEnergy'].includes(item.kind)
 export const isDynamic = (item) => !['letter', 'invalid', 'law', 'gravity', 'coulomb', 'springEnergy'].includes(item.kind)
-export const isDirectional = (item) => ['newton', 'weight', 'electric', 'momentum', 'kineticEnergy', 'work', 'power', 'wave'].includes(item.kind)
+export const isDirectional = (item) => ['newton', 'weight', 'electric', 'momentum', 'kineticEnergy', 'work', 'power', 'wave', 'kinematics', 'impulse', 'fluid', 'torque'].includes(item.kind)
 export const isMass = (item) => item.kind === 'letter' && item.text === 'm'
 export const isCharged = (item) => (isDynamic(item) || item.kind === 'letter') && item.text.includes('q')
 export const isCollidable = (item) => !item.held && !isField(item) && (isDynamic(item) || isMass(item))
@@ -369,11 +542,13 @@ export function resolveWorldCollisions(items, { width, floor, restitution = .72 
 }
 
 export function defaultDirection(kind) {
-  return kind === 'weight' ? { x: 0, y: 1 } : kind === 'newton' ? { x: -1, y: 0 } : { x: 1, y: 0 }
+  return ['weight'].includes(kind) ? { x: 0, y: 1 }
+    : ['buoyancy'].includes(kind) ? { x: 0, y: -1 }
+      : kind === 'newton' ? { x: -1, y: 0 } : { x: 1, y: 0 }
 }
 
 export function resetMotion(item, viewport = { width: 1200, height: 800 }) {
-  const direction = defaultDirection(item.kind)
+  const direction = item.law === 'buoyancy' ? { x: 0, y: -1 } : defaultDirection(item.kind)
   const magnitude = item.magnitude ?? 100
   const scale = Math.min(viewport.width / 1200, viewport.height / 800, 1)
   const radius = Math.max(45, 110 * scale)
@@ -383,13 +558,14 @@ export function resetMotion(item, viewport = { width: 1200, height: 800 }) {
   if (item.kind === 'momentum' || item.kind === 'wave') vx = item.speedValue ?? magnitude * 1.6
   if (item.kind === 'kineticEnergy') vx = item.speedValue ?? Math.sqrt(200 * magnitude)
   if (item.kind === 'power') vx = 40
+  if (item.kind === 'kinematics' && (item.outputSymbol === 'v' || item.law === 'displacementTime')) vx = item.outputValue ?? magnitude
   const motion = {
     vx, vy, ax: 0, ay: 0, age: 0, trail: [],
     directionX: direction.x, directionY: direction.y,
     anchorX: item.x, anchorY: item.y, radius,
     fieldScale: item.fieldScale ?? 1, magnitude,
     massValue: item.massValue ?? 1,
-    wavePhase: 0, travelled: 0,
+    wavePhase: 0, travelled: 0, rotation: 0, angularVelocity: 0, impulseApplied: false,
   }
   if (item.kind === 'centripetal') {
     motion.anchorX = item.x - radius
@@ -427,8 +603,37 @@ export function springAcceleration(item, spring) {
   return { ax: dx / distance * strength - item.vx * damping, ay: dy / distance * strength - item.vy * damping }
 }
 
+// Equations dropped on top of one another share an interaction group. Force
+// equations in that group contribute to the motion of the other members, so a
+// mass can respond to several visible laws at once instead of becoming an
+// isolated animation.
+export function interactionAcceleration(item, peers = []) {
+  if (!item.interactionGroup || !peers.length) return { ax: 0, ay: 0 }
+  return peers.reduce((sum, peer) => {
+    if (peer.id === item.id || ['letter', 'invalid', 'law', 'gravity', 'coulomb', 'springEnergy'].includes(peer.kind)) return sum
+    if (peer.kind === 'spring') {
+      const elastic = springAcceleration(item, peer)
+      return { ax: sum.ax + elastic.ax, ay: sum.ay + elastic.ay }
+    }
+    const direction = peer.directionX === undefined ? defaultDirection(peer.kind) : { x: peer.directionX, y: peer.directionY }
+    const mass = Math.max(Math.abs(item.massValue ?? 1), .01)
+    const force = peer.forceValue ?? peer.outputValue
+    if (!Number.isFinite(force)) return sum
+    if (['friction', 'drag', 'quadraticDrag', 'viscous'].includes(peer.kind)) {
+      const speed = Math.hypot(item.vx ?? 0, item.vy ?? 0)
+      if (!speed) return sum
+      const drag = peer.kind === 'friction' ? Math.abs(force)
+        : peer.kind === 'quadraticDrag' ? Math.abs(force) * speed / 100
+          : Math.abs(force) / 90 * speed
+      return { ax: sum.ax - (item.vx / speed) * drag / mass, ay: sum.ay - (item.vy / speed) * drag / mass }
+    }
+    const sign = peer.kind === 'buoyancy' ? 1 : 1
+    return { ax: sum.ax + direction.x * force * sign / mass, ay: sum.ay + direction.y * force * sign / mass }
+  }, { ax: 0, ay: 0 })
+}
+
 // Pure integrator, shared by the app and physical-invariant tests.
-export function stepItem(item, dt, fields = [], spring = null) {
+export function stepItem(item, dt, fields = [], spring = null, peers = []) {
   const next = { ...item, age: item.age + dt }
   if (!isDynamic(item) && !isMass(item) && !isCharged(item)) return next
   let remaining = dt
@@ -437,6 +642,41 @@ export function stepItem(item, dt, fields = [], spring = null) {
     remaining -= h
     let ax = 0, ay = isMass(next) ? 620 : 0
     const magnitude = next.magnitude ?? 100
+    if (next.kind === 'kinematics') {
+      const value = next.outputValue ?? magnitude
+      if (next.outputSymbol === 'v' || next.law === 'displacementTime') {
+        // v=... and s=vt describe translational motion directly.
+        next.vx = next.directionX * value
+        next.vy = next.directionY * value
+      } else {
+        ax = next.directionX * value
+        ay = next.directionY * value
+      }
+    }
+    if (next.kind === 'impulse' && !next.impulseApplied) {
+      const impulse = next.outputValue ?? magnitude
+      const mass = Math.max(Math.abs(next.massValue ?? 1), .01)
+      next.vx += next.directionX * impulse / mass
+      next.vy += next.directionY * impulse / mass
+      next.impulseApplied = true
+    }
+    if (next.kind === 'fluid') {
+      const force = next.forceValue ?? next.outputValue ?? magnitude
+      const mass = Math.max(Math.abs(next.massValue ?? 1), .01)
+      ax = next.directionX * force / mass
+      ay = next.directionY * force / mass
+      if (next.law === 'viscous') {
+        ax -= next.vx * Math.abs(force) / 180
+        ay -= next.vy * Math.abs(force) / 180
+      }
+    }
+    if (next.kind === 'torque') {
+      const torque = next.outputValue ?? magnitude
+      next.angularVelocity += torque / Math.max(next.massValue ?? 1, .1) * h
+      next.rotation += next.angularVelocity * h
+      next.ax = 0
+      next.ay = 0
+    }
     if (['newton', 'weight', 'electric', 'work'].includes(next.kind)) {
       const strength = next.kind === 'work' && next.travelled > 160 ? 0
         : next.kind === 'work' ? (next.forceValue ?? magnitude)
@@ -467,6 +707,9 @@ export function stepItem(item, dt, fields = [], spring = null) {
       ax += elastic.ax
       ay += elastic.ay
     }
+    const linked = interactionAcceleration(next, peers)
+    ax += linked.ax
+    ay += linked.ay
     if (next.kind === 'pendulum') {
       const length = next.radius
       const tangentX = Math.cos(next.theta), tangentY = -Math.sin(next.theta)
@@ -567,6 +810,16 @@ export function changeArrow(item, directionX, directionY, magnitude) {
     updated.directionY = directionY
     updated.anchorX = item.x + directionX * 60
     updated.anchorY = item.y + directionY * 60
+    return updated
+  }
+  if (['kinematics', 'impulse', 'fluid', 'torque'].includes(item.kind) && item.inputSymbols?.length) {
+    const symbol = item.inputSymbols.includes('a') ? 'a'
+      : item.inputSymbols.includes('F') ? 'F'
+        : item.inputSymbols.includes('g') ? 'g' : item.inputSymbols[0]
+    const updated = refreshFormula({ ...next, parameters: { ...item.parameters, [symbol]: magnitude } })
+    updated.directionX = directionX
+    updated.directionY = directionY
+    if (item.kind === 'impulse') updated.impulseApplied = false
     return updated
   }
   if (item.kind === 'work') {
