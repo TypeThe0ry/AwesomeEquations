@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Trash } from '@phosphor-icons/react'
 import './styles.css'
-import { clamp, normalize, resolveFormula, defaultDirection, resetMotion, isField, isDynamic, isDirectional, isSpringSource, stepItem, changeArrow, resolveWorldCollisions } from './physics.js'
+import { clamp, normalize, resolveFormula, refreshFormula, defaultDirection, resetMotion, isField, isDynamic, isDirectional, isSpringSource, stepItem, changeArrow, resolveWorldCollisions } from './physics.js'
 
 const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'x', 't', 'W', 'P', 'p', 'E', 'e', 'k', 'L', 'd', 'r', 'U', 'R', 'I', 'q', 'B', 'G', 'c', 'f', 'μ', 'ρ', 'ω', 'λ', 'θ', 'Q', 'T', '½', 'h', 'n', 'C', 'S', 'V']
 const FONT = 76
@@ -10,6 +10,7 @@ const MIN_MAGNITUDE = 28
 const MAX_MAGNITUDE = 360
 const MIN_FIELD_SCALE = .45
 const MAX_FIELD_SCALE = 3
+const formatValue = (value) => Number.isFinite(value) ? (Math.abs(value) >= 1000 || (Math.abs(value) > 0 && Math.abs(value) < .01) ? value.toExponential(2) : value.toFixed(2)) : '—'
 
 const responsiveFont = () => clamp(Math.min(window.innerWidth * .1, window.innerHeight * .2), 56, 110)
 const glyphUnits = (text) => [...text].reduce((sum, glyph) => sum + (/[mMwW]/.test(glyph) ? .76 : /[=+−]/.test(glyph) ? .63 : /[Ii1]/.test(glyph) ? .33 : .5), 0)
@@ -122,24 +123,37 @@ function attachToSpring(items, id) {
   })
 }
 
-function MathText({ text }) {
-  return text.split(/([²³])/).map((part, index) => /[²³]/.test(part)
-    ? <sup key={index}>{part === '²' ? '2' : '3'}</sup> : <span key={index}>{part}</span>)
+function MathText({ text, formula, onVariablePointerDown }) {
+  const inputs = new Set(formula?.inputSymbols ?? [])
+  const parts = []
+  for (const [partIndex, part] of text.split(/([²³])/).entries()) {
+    if (/^[²³]$/.test(part)) {
+      parts.push(<sup key={partIndex}>{part === '²' ? '2' : '3'}</sup>)
+      continue
+    }
+    for (const [glyphIndex, glyph] of [...part].entries()) {
+      const adjustable = inputs.has(glyph) && glyph !== formula?.outputSymbol
+      parts.push(adjustable
+        ? <span key={`${partIndex}-${glyphIndex}`} className="formula-variable" data-variable={glyph} onPointerDown={(event) => onVariablePointerDown?.(event, glyph)}>{glyph}</span>
+        : <span key={`${partIndex}-${glyphIndex}`}>{glyph}</span>)
+    }
+  }
+  return parts
 }
 
-function displayFormula(formula) {
+function displayFormula(formula, onVariablePointerDown) {
   const slash = formula.text.indexOf('/')
-  if (slash < 0) return <MathText text={formula.text} />
+  if (slash < 0) return <MathText text={formula.text} formula={formula} onVariablePointerDown={onVariablePointerDown} />
   const equals = formula.text.indexOf('=')
   const prefix = equals >= 0 ? formula.text.slice(0, equals + 1) : ''
-  return <span className="fraction-equation"><MathText text={prefix} /><Fraction numerator={formula.text.slice(prefix.length, slash)} denominator={formula.text.slice(slash + 1)} /></span>
+  return <span className="fraction-equation"><MathText text={prefix} formula={formula} onVariablePointerDown={onVariablePointerDown} /><Fraction formula={formula} numerator={formula.text.slice(prefix.length, slash)} denominator={formula.text.slice(slash + 1)} onVariablePointerDown={onVariablePointerDown} /></span>
 }
 
-function Fraction({ numerator, denominator }) {
+function Fraction({ formula, numerator, denominator, onVariablePointerDown }) {
   return <span className="fraction" role="img" aria-label={`${numerator} / ${denominator}`}>
-    <span className="fraction-part fraction-numerator"><MathText text={numerator} /></span>
+    <span className="fraction-part fraction-numerator"><MathText text={numerator} formula={formula} onVariablePointerDown={onVariablePointerDown} /></span>
     <span className="fraction-rule" aria-hidden="true" />
-    <span className="fraction-part fraction-denominator"><MathText text={denominator} /></span>
+    <span className="fraction-part fraction-denominator"><MathText text={denominator} formula={formula} onVariablePointerDown={onVariablePointerDown} /></span>
   </span>
 }
 
@@ -156,13 +170,23 @@ function App() {
   const add = (text, x, y) => {
     const id = nextId.current++
     const formula = resolveFormula(text)
-    const item = { id, parts: text, ...formula, x, y, held: false, magnitude: 100, ...fittedMetrics(formula.text) }
+    const item = refreshFormula({ id, parts: text, ...formula, x, y, held: false, magnitude: 100, ...fittedMetrics(formula.text) })
     Object.assign(item, resetMotion(item, { width: window.innerWidth, height: window.innerHeight }))
     setItems((current) => [...current, item])
     return id
   }
 
   const remove = (id) => setItems((current) => current.filter((item) => item.id !== id))
+
+  const beginParameter = (event, id, symbol) => {
+    if (event.button !== 0 || drag.current) return
+    const item = itemsRef.current.find((candidate) => candidate.id === id)
+    if (!item || !item.parameters || !Number.isFinite(item.parameters[symbol])) return
+    event.preventDefault()
+    event.stopPropagation()
+    drag.current = { type: 'parameter', id, symbol, pointerId: event.pointerId, startY: event.clientY, startValue: item.parameters[symbol] }
+    if (event.currentTarget.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId)
+  }
 
   useEffect(() => {
     let frame
@@ -226,6 +250,11 @@ function App() {
           const anchor = springAnchorPoint(item, endpoint)
           drawSpring(context, anchor.x, anchor.y, endpoint.x, endpoint.y)
         }
+        if (item.outputSymbol && Number.isFinite(item.outputValue) && !['letter', 'invalid'].includes(item.kind)) {
+          context.fillStyle = 'rgba(69, 65, 59, .58)'
+          context.font = 'italic 14px Times New Roman'
+          context.fillText(`${item.outputSymbol} = ${formatValue(item.outputValue)}`, item.x - item.width / 2, item.y + item.height / 2 + 16)
+        }
         if (['letter', 'law', 'invalid', 'springEnergy'].includes(item.kind)) return
         item.trail.forEach((point, index) => {
           const opacity = Math.max(0, .18 * (index + 1) / item.trail.length)
@@ -272,7 +301,7 @@ function App() {
         const speed = Math.hypot(item.vx, item.vy)
         context.font = 'italic 14px Times New Roman'
         const measure = item.kind === 'work' ? `d = ${(item.travelled / 100).toFixed(2)}` : `v = ${(speed / 100).toFixed(2)}`
-        context.fillText(measure, item.x - item.width / 2, item.y + item.height / 2 + 18)
+        context.fillText(measure, item.x - item.width / 2, item.y + item.height / 2 + 32)
         if (item.collisionFlash > 0) {
           context.strokeStyle = `rgba(69, 65, 59, ${item.collisionFlash * 2.4})`
           context.lineWidth = 1.2
@@ -290,6 +319,25 @@ function App() {
   const move = (event) => {
     const active = drag.current
     if (!active || event.pointerId !== active.pointerId) return
+    if (active.type === 'parameter') {
+      setItems((current) => current.map((item) => {
+        if (item.id !== active.id) return item
+        const scale = Math.max(Math.abs(active.startValue) * .012, .03)
+        const minimum = ['m', 'r', 'k', 'c', 'v', 'f', 'λ', 'E', 'I', 'R'].includes(active.symbol) ? .01 : -1000
+        const maximum = 1000
+        const value = clamp(active.startValue + (active.startY - event.clientY) * scale, minimum, maximum)
+        const updated = refreshFormula({ ...item, parameters: { ...item.parameters, [active.symbol]: value } })
+        if (['momentum', 'wave', 'kineticEnergy'].includes(updated.kind) && Number.isFinite(updated.speedValue)) {
+          const currentSpeed = Math.hypot(item.vx, item.vy)
+          const directionX = currentSpeed > 1 ? item.vx / currentSpeed : item.directionX
+          const directionY = currentSpeed > 1 ? item.vy / currentSpeed : item.directionY
+          updated.vx = directionX * updated.speedValue
+          updated.vy = directionY * updated.speedValue
+        }
+        return updated
+      }))
+      return
+    }
     if (active.type === 'arrow') {
       setItems((current) => current.map((item) => {
         if (item.id !== active.id) return item
@@ -316,7 +364,7 @@ function App() {
     const active = drag.current
     if (!active || event.pointerId !== active.pointerId) return
     drag.current = null
-    if (active.type === 'arrow' || active.type === 'field') return
+    if (active.type === 'arrow' || active.type === 'field' || active.type === 'parameter') return
     const bin = trash.current.getBoundingClientRect()
     if (cancelled || (event.clientX > bin.left - 20 && event.clientX < bin.right + 20 && event.clientY > bin.top - 20 && event.clientY < bin.bottom + 20)) {
       remove(active.id)
@@ -371,7 +419,7 @@ function App() {
   return <main className="sandbox" onPointerDown={beginCanvas} onPointerMove={move} onPointerUp={release} onPointerCancel={(event) => release(event, true)}>
     <canvas ref={canvas} className="effects" aria-hidden="true" />
     <div className="floor" aria-hidden="true" />
-    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize }} data-equation={item.text} data-kind={item.kind} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item)}</span></div>)}
+    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize }} data-equation={item.text} data-kind={item.kind} data-output={item.outputSymbol} data-output-value={item.outputValue} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item, (event, symbol) => beginParameter(event, item.id, symbol))}</span></div>)}
     <aside className="palette" ref={palette}>{SYMBOLS.map((symbol) => <button key={symbol} type="button" className="symbol" onPointerDown={(event) => start(event, symbol)} onClick={(event) => clickPalette(event, symbol)}>{symbol}</button>)}</aside>
     <button className="trash" ref={trash} type="button" aria-label="删除符号" onClick={() => setItems([])}><Trash size={40} weight="light" /></button>
   </main>
@@ -387,8 +435,8 @@ function mergeNear(items, id) {
   const second = first === current ? target : current
   const parts = (first.parts ?? first.text) + (second.parts ?? second.text)
   const formula = resolveFormula(parts)
-  const merged = { ...first, ...formula, parts, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, held: false,
-    attachedTo: undefined, springRestLength: undefined, ...fittedMetrics(formula.text) }
+  const merged = refreshFormula({ ...first, ...formula, parts, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, held: false,
+    attachedTo: undefined, springRestLength: undefined, ...fittedMetrics(formula.text) })
   Object.assign(merged, resetMotion(merged, { width: window.innerWidth, height: window.innerHeight }))
   return items.filter((item) => item.id !== current.id && item.id !== target.id).concat(merged)
 }
