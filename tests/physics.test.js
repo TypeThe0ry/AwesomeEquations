@@ -104,6 +104,17 @@ test('world boundaries bounce active formulas', () => {
   assert.ok(bounced.vx > 0)
 })
 
+test('adjusting formulas stay fixed through collisions and resume on release', () => {
+  const frozen = { ...body('p=mv'), id: 1, x: 12, y: 300, width: 90, height: 76, vx: -120, vy: 0 }
+  const other = { ...body('p=mv'), id: 2, x: 50, y: 300, width: 90, height: 76, vx: -60, vy: 0 }
+  const paused = resolveWorldCollisions([frozen, other], { width: 1000, floor: 700, frozenIds: [frozen.id] })
+  assert.deepEqual(paused[0], frozen)
+  assert.deepEqual(paused[1], other)
+  const resumed = resolveWorldCollisions(paused, { width: 1000, floor: 700 })[0]
+  assert.notEqual(resumed.x, frozen.x)
+  assert.notEqual(resumed.vx, frozen.vx)
+})
+
 test('spring force arrow controls stiffness and every spring carries a one kilogram mass', () => {
   const formula = refreshFormula({ id: 1, ...resolveFormula('F=−kx'), x: 500, y: 300, ...resetMotion(resolveFormula('F=−kx')) })
   const adjusted = changeArrow(formula, 1, 0, 240)
