@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveFormula, refreshFormula, resetMotion, stepItem, fieldAcceleration, fieldScaleFor, interactionAcceleration, changeArrow, resolveWorldCollisions, collisionRadius } from '../src/physics.js'
+import { resolveFormula, resolveEnteredFormula, refreshFormula, resetMotion, stepItem, fieldAcceleration, fieldScaleFor, interactionAcceleration, changeArrow, resolveWorldCollisions, collisionRadius, vectorFor, readoutsFor } from '../src/physics.js'
 
 function body(text, overrides = {}) {
   const item = { id: 1, ...resolveFormula(text), x: 500, y: 300, magnitude: 100, ...overrides }
@@ -142,4 +142,26 @@ test('new classical arrows change an input and refresh the output', () => {
   assert.equal(adjusted.parameters.a, 180)
   assert.equal(adjusted.outputValue, 180)
   assert.equal(adjusted.directionY, -1)
+})
+
+test('typed equations keep their operators, validate units, and animate', () => {
+  const spring = resolveEnteredFormula('F=kx')
+  assert.equal(spring.kind, 'expression')
+  assert.equal(spring.expressionError, '')
+  assert.equal(refreshFormula({ id: 1, ...spring, x: 400, y: 300 }).outputValue, 4)
+  const oscillator = resolveEnteredFormula('x=A sin(ωt)')
+  assert.equal(oscillator.visual, 'oscillator')
+  assert.equal(oscillator.expressionError, '')
+  const animated = stepItem({ id: 2, ...oscillator, x: 400, y: 300, width: 90, height: 76, ...resetMotion({ id: 2, ...oscillator, x: 400, y: 300, width: 90, height: 76 }) }, .2)
+  assert.notEqual(animated.x, 400)
+  assert.ok(readoutsFor(animated).some(readout => readout.unit === 'm'))
+  assert.ok(resolveEnteredFormula('F=m/a').expressionError)
+})
+
+test('dynamic vectors follow rebound velocity during collisions', () => {
+  const a = { ...body('p=mv'), id: 1, x: 450, y: 300, vx: 120, vy: 0 }
+  const b = { ...body('p=mv'), id: 2, x: 500, y: 300, vx: -120, vy: 0 }
+  const collided = resolveWorldCollisions([a, b], { width: 1000, floor: 700 })
+  assert.ok(vectorFor(collided[0]).x < 0)
+  assert.ok(vectorFor(collided[1]).x > 0)
 })
