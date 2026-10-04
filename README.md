@@ -9,10 +9,13 @@ Equation World lets you drag mathematical symbols onto a canvas, arrange them in
 ## What is here
 
 - Drag or click symbols to compose equations.
+- Use the `+` tile in the symbol palette to enter an equation directly, for
+  example `F=−kx−cv`, `F=−mg sin(θ)`, or `x=A sin(ωt)`. Entered expressions
+  are unit-checked and turn red when the relation is not physically valid.
 - Parse multiple equations as active laws.
 - Run a mechanics world with force, gravity, spring, friction, drag, impulse,
   kinematics, energy, momentum, torque, rotation, pendulum, fluid, and collision rules.
-- Use 49 supported relations, including `F=ma`, `F=GMm/r²`, `F=−kx`,
+- Use 50 supported relations, including `F=ma`, `F=GMm/r²`, `F=−kx`,
   `v=u+at`, `s=ut+½at²`, `J=Ft`, `p=mv`, `E=½mv²`, `U=mgh`,
   `L=mvr`, `τ=Iα`, `I=mr²`, `P=F/A`, `P=ρgh`, and `F=ρVg`.
 - Every relation has a matching live visual: force arrows and falling formulas,
@@ -23,6 +26,12 @@ Equation World lets you drag mathematical symbols onto a canvas, arrange them in
 - Place completed equations together to create an interaction group. Linked
   force laws act on the same moving formulas, while fields, springs, and
   collisions continue to work across the whole canvas.
+- Drag `m` or `q` onto a compatible equation to give that law a moving body;
+  drag two completed equations together to couple their forces. Arrows are
+  live vectors: their direction follows acceleration or velocity, flips on
+  collision, and their magnitude can be adjusted by dragging the arrow.
+- Values are labeled with SI-style units, and right-clicking any formula
+  removes it.
 - Switch between Mechanics, Electromagnetism, Thermodynamics, and Quantum symbol domains.
 - Start from Gravity, Spring, Ohm, Heat, or Wave presets.
 
