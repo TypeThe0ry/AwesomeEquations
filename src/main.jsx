@@ -32,9 +32,10 @@ function kindFor(text) {
 
 function canonicalFormula(text) {
   const value = normalize(text)
+  const compactValue = value.replace(/[=−-]/g, '')
   if (value === 'Fma' || (value.includes('F') && value.includes('m') && value.includes('a') && value.length <= 3)) return 'F=ma'
   if (value === 'Fmg' || (value.includes('F') && value.includes('m') && value.includes('g') && value.length <= 3)) return 'F=mg'
-  if (value.includes('F') && value.includes('k') && value.includes('x') && value.includes('c') && value.includes('v') && value.length <= 5) return 'F=-kx-cv'
+  if (compactValue.includes('F') && compactValue.includes('k') && compactValue.includes('x') && compactValue.includes('c') && compactValue.includes('v') && compactValue.length <= 5) return 'F=-kx-cv'
   if (value === 'Fkx' || (value.includes('F') && value.includes('k') && value.includes('x') && value.length <= 3)) return 'F=−kx'
   if (value === 'FqE' || (value.includes('F') && value.includes('q') && value.includes('E') && value.length <= 3)) return 'F=qE'
   if ((value === 'FGMmr' || value === 'FGMmR') || (value.includes('F') && value.includes('G') && value.includes('M') && value.includes('m') && (value.includes('r') || value.includes('R')))) return 'F=GMm/r²'
