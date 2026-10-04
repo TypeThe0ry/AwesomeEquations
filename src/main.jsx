@@ -17,6 +17,7 @@ const glyphUnits = (text) => [...text].reduce((sum, glyph) => sum + (/[mMwW]/.te
 const glyphWidth = (text, fontSize = FONT) => glyphUnits(text) * fontSize
 
 function formulaMetrics(text, fontSize) {
+  text = String(text ?? '')
   const slash = text.indexOf('/')
   if (slash >= 0) {
     const equals = text.indexOf('=')
@@ -29,6 +30,7 @@ function formulaMetrics(text, fontSize) {
 }
 
 function fittedMetrics(text) {
+  text = String(text ?? '')
   let fontSize = responsiveFont()
   const available = Math.max(180, window.innerWidth * .73)
   const width = formulaMetrics(text, fontSize).width
@@ -239,11 +241,12 @@ function MathText({ text, formula, onVariablePointerDown }) {
 }
 
 function displayFormula(formula, onVariablePointerDown) {
-  const slash = formula.text.indexOf('/')
-  if (slash < 0) return <MathText text={formula.text} formula={formula} onVariablePointerDown={onVariablePointerDown} />
-  const equals = formula.text.indexOf('=')
-  const prefix = equals >= 0 ? formula.text.slice(0, equals + 1) : ''
-  return <span className="fraction-equation"><MathText text={prefix} formula={formula} onVariablePointerDown={onVariablePointerDown} /><Fraction formula={formula} numerator={formula.text.slice(prefix.length, slash)} denominator={formula.text.slice(slash + 1)} onVariablePointerDown={onVariablePointerDown} /></span>
+  const text = String(formula.text ?? formula.parts ?? '')
+  const slash = text.indexOf('/')
+  if (slash < 0) return <MathText text={text} formula={formula} onVariablePointerDown={onVariablePointerDown} />
+  const equals = text.indexOf('=')
+  const prefix = equals >= 0 ? text.slice(0, equals + 1) : ''
+  return <span className="fraction-equation"><MathText text={prefix} formula={formula} onVariablePointerDown={onVariablePointerDown} /><Fraction formula={formula} numerator={text.slice(prefix.length, slash)} denominator={text.slice(slash + 1)} onVariablePointerDown={onVariablePointerDown} /></span>
 }
 
 function Fraction({ formula, numerator, denominator, onVariablePointerDown }) {
@@ -562,8 +565,9 @@ function mergeNear(items, id) {
   const second = first === current ? target : current
   const parts = (first.parts ?? first.text) + (second.parts ?? second.text)
   const formula = resolveFormula(parts)
-  const merged = refreshFormula({ ...first, ...formula, parts, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, held: false,
-    attachedTo: undefined, springRestLength: undefined, ...fittedMetrics(formula.text) })
+  const equationText = String(formula.text ?? parts ?? '')
+  const merged = refreshFormula({ ...first, ...formula, text: equationText, parts, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, held: false,
+    attachedTo: undefined, springRestLength: undefined, ...fittedMetrics(equationText) })
   Object.assign(merged, resetMotion(merged, { width: window.innerWidth, height: window.innerHeight }))
   return items.filter((item) => item.id !== current.id && item.id !== target.id).concat(merged)
 }
