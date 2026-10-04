@@ -8,6 +8,8 @@ const FONT = 76
 const MIN_MAGNITUDE = 28
 const MAX_MAGNITUDE = 360
 const GRAVITY_STRENGTH = 12_000_000
+const MIN_FIELD_SCALE = .45
+const MAX_FIELD_SCALE = 3
 
 const clamp = (number, min, max) => Math.max(min, Math.min(max, number))
 const normalize = (text) => text.replaceAll('−', '-').replace(/\s/g, '')
@@ -32,6 +34,7 @@ function canonicalFormula(text) {
   const value = normalize(text)
   if (value === 'Fma' || (value.includes('F') && value.includes('m') && value.includes('a') && value.length <= 3)) return 'F=ma'
   if (value === 'Fmg' || (value.includes('F') && value.includes('m') && value.includes('g') && value.length <= 3)) return 'F=mg'
+  if (value.includes('F') && value.includes('k') && value.includes('x') && value.includes('c') && value.includes('v') && value.length <= 5) return 'F=-kx-cv'
   if (value === 'Fkx' || (value.includes('F') && value.includes('k') && value.includes('x') && value.length <= 3)) return 'F=−kx'
   if (value === 'FqE' || (value.includes('F') && value.includes('q') && value.includes('E') && value.length <= 3)) return 'F=qE'
   if ((value === 'FGMmr' || value === 'FGMmR') || (value.includes('F') && value.includes('G') && value.includes('M') && value.includes('m') && (value.includes('r') || value.includes('R')))) return 'F=GMm/r²'
@@ -61,6 +64,10 @@ function forceDirection(item) {
   return { x: -1, y: 0 }
 }
 
+function directionalKind(kind) {
+  return ['newton', 'weight', 'electric'].includes(kind)
+}
+
 function formulaMetrics(text, fontSize) {
   const value = normalize(text)
   if (/^F=GMm\/[rR](²|\^2)$/.test(value)) {
@@ -73,8 +80,9 @@ function formulaMetrics(text, fontSize) {
 function arrowGeometry(item) {
   const speed = Math.hypot(item.vx, item.vy)
   const fallback = forceDirection(item)
-  const directionX = speed > 5 ? item.vx / speed : fallback.x
-  const directionY = speed > 5 ? item.vy / speed : fallback.y
+  const hasForcedDirection = directionalKind(item.kind) && Number.isFinite(item.directionX) && Number.isFinite(item.directionY)
+  const directionX = hasForcedDirection ? item.directionX : speed > 5 ? item.vx / speed : fallback.x
+  const directionY = hasForcedDirection ? item.directionY : speed > 5 ? item.vy / speed : fallback.y
   const edge = Math.abs(directionX) * item.width / 2 + Math.abs(directionY) * item.height / 2 + 18
   const startX = item.x + directionX * edge
   const startY = item.y + directionY * edge
@@ -87,6 +95,14 @@ function arrowGeometry(item) {
     endX: startX + directionX * (item.magnitude ?? 100),
     endY: startY + directionY * (item.magnitude ?? 100),
   }
+}
+
+function fieldBoundaryDistance(item, x, y) {
+  const scale = item.fieldScale ?? 1
+  const radiusX = item.width * 1.59 * scale
+  const radiusY = item.height * .64 * scale
+  const normalizedRadius = Math.hypot((x - item.x) / radiusX, (y - (item.y - 4)) / radiusY)
+  return Math.abs(normalizedRadius - 1) * Math.min(radiusX, radiusY)
 }
 
 function distanceToSegment(px, py, x1, y1, x2, y2) {
@@ -103,7 +119,7 @@ function gravityAcceleration(item, fields) {
     const dx = field.x - item.x
     const dy = field.y - item.y
     const distance = Math.max(Math.hypot(dx, dy), 90)
-    const strength = GRAVITY_STRENGTH / (distance * distance)
+    const strength = GRAVITY_STRENGTH * (field.fieldScale ?? 1) / (distance * distance)
     return {
       ax: total.ax + dx / distance * strength,
       ay: total.ay + dy / distance * strength,
@@ -194,7 +210,9 @@ function App() {
     const id = nextId.current++
     const fontSize = responsiveFont()
     const metrics = formulaMetrics(text, fontSize)
-    const item = { id, text, x, y, vx: 0, vy: 0, held: false, kind: kindFor(text), age: 0, trail: [], fontSize, width: metrics.width, height: metrics.height, magnitude: 100, anchorX: x, anchorY: y }
+    const kind = kindFor(text)
+    const direction = forceDirection({ kind })
+    const item = { id, text, x, y, vx: 0, vy: 0, held: false, kind, age: 0, trail: [], fontSize, width: metrics.width, height: metrics.height, magnitude: 100, fieldScale: 1, directionX: direction.x, directionY: direction.y, anchorX: x, anchorY: y }
     setItems((current) => [...current, item])
     return id
   }
@@ -223,12 +241,17 @@ function App() {
           let ax = 0
           let ay = isM ? 620 : 0
           if (item.kind === 'newton') {
-            ax = -(item.magnitude ?? 120)
-            ay = 0
+            const strength = item.magnitude ?? 120
+            ax = item.directionX * strength
+            ay = item.directionY * strength
           } else if (item.kind === 'weight') {
-            ay = item.magnitude ?? 120
+            const strength = item.magnitude ?? 120
+            ax = item.directionX * strength
+            ay = item.directionY * strength
           } else if (item.kind === 'electric') {
-            ax = item.magnitude ?? 120
+            const strength = item.magnitude ?? 120
+            ax = item.directionX * strength
+            ay = item.directionY * strength
           } else if (item.kind === 'spring') {
             ax = -(item.x - item.anchorX) * 5.5 - item.vx * .02
             ay = -(item.y - item.anchorY) * 4 - item.vy * .04
@@ -312,17 +335,18 @@ function App() {
           context.fill()
         })
         if (item.kind === 'gravity') {
+          const fieldScale = item.fieldScale ?? 1
           for (let ring = 0; ring < 3; ring += 1) {
             context.strokeStyle = `rgba(87, 80, 70, ${.16 - ring * .035})`
             context.lineWidth = 1
             context.beginPath()
-            context.ellipse(item.x, item.y - 4, item.width * (.95 + ring * .32), item.height * (.38 + ring * .13), -.12, 0, Math.PI * 2)
+            context.ellipse(item.x, item.y - 4, item.width * (.95 + ring * .32) * fieldScale, item.height * (.38 + ring * .13) * fieldScale, -.12, 0, Math.PI * 2)
             context.stroke()
           }
           return
         }
         const magnitude = Math.hypot(item.vx, item.vy)
-        if (magnitude < 5) return
+        if (magnitude < 5 && !directionalKind(item.kind)) return
         const arrow = arrowGeometry(item)
         const { directionX, directionY, startX, startY, endX, endY } = arrow
         context.strokeStyle = 'rgba(69, 65, 59, .6)'
@@ -345,8 +369,20 @@ function App() {
     if (active.type === 'arrow') {
       setItems((current) => current.map((item) => {
         if (item.id !== active.id) return item
-        const projection = (event.clientX - item.x) * active.directionX + (event.clientY - item.y) * active.directionY
-        return { ...item, magnitude: clamp(projection - active.edge, MIN_MAGNITUDE, MAX_MAGNITUDE) }
+        const dx = event.clientX - item.x
+        const dy = event.clientY - item.y
+        const distance = Math.max(Math.hypot(dx, dy), 1)
+        return { ...item, magnitude: clamp(distance - active.edge, MIN_MAGNITUDE, MAX_MAGNITUDE), directionX: dx / distance, directionY: dy / distance, vx: 0, vy: 0 }
+      }))
+      return
+    }
+    if (active.type === 'field') {
+      setItems((current) => current.map((item) => {
+        if (item.id !== active.id) return item
+        const dx = event.clientX - item.x
+        const dy = event.clientY - (item.y - 4)
+        const normalizedRadius = Math.hypot(dx / (item.width * 1.59), dy / (item.height * .64))
+        return { ...item, fieldScale: clamp(normalizedRadius, MIN_FIELD_SCALE, MAX_FIELD_SCALE) }
       }))
       return
     }
@@ -357,7 +393,7 @@ function App() {
     const active = drag.current
     if (!active || event.pointerId !== active.pointerId) return
     drag.current = null
-    if (active.type === 'arrow') return
+    if (active.type === 'arrow' || active.type === 'field') return
     const bin = trash.current.getBoundingClientRect()
     if (cancelled || (event.clientX > bin.left - 20 && event.clientX < bin.right + 20 && event.clientY > bin.top - 20 && event.clientY < bin.bottom + 20)) {
       remove(active.id)
@@ -380,8 +416,16 @@ function App() {
 
   const beginCanvas = (event) => {
     if (event.button !== 0 || drag.current) return
+    const fieldHit = [...itemsRef.current].reverse().find((item) => item.kind === 'gravity' && fieldBoundaryDistance(item, event.clientX, event.clientY) < 18)
+    if (fieldHit) {
+      event.preventDefault()
+      drag.current = { type: 'field', id: fieldHit.id, pointerId: event.pointerId }
+      if (event.currentTarget.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId)
+      return
+    }
     const hit = [...itemsRef.current].reverse().find((item) => {
-      if (['letter', 'law', 'invalid', 'gravity', 'springEnergy'].includes(item.kind) || item.held || Math.hypot(item.vx, item.vy) < 5) return false
+      if (['letter', 'law', 'invalid', 'gravity', 'springEnergy'].includes(item.kind) || item.held) return false
+      if (!directionalKind(item.kind) && Math.hypot(item.vx, item.vy) < 5) return false
       const arrow = arrowGeometry(item)
       return distanceToSegment(event.clientX, event.clientY, arrow.startX, arrow.startY, arrow.endX, arrow.endY) < 16
     })
@@ -405,7 +449,7 @@ function App() {
   return <main className="sandbox" onPointerDown={beginCanvas} onPointerMove={move} onPointerUp={release} onPointerCancel={(event) => release(event, true)}>
     <canvas ref={canvas} className="effects" aria-hidden="true" />
     <div className="floor" aria-hidden="true" />
-    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize }} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className={item.kind === 'gravity' ? 'gravity-formula' : ''}>{displayFormula(item)}</span></div>)}
+    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize }} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={item.kind === 'gravity' ? item.fieldScale : undefined} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className={item.kind === 'gravity' ? 'gravity-formula' : ''}>{displayFormula(item)}</span></div>)}
     <aside className="palette" ref={palette}>{SYMBOLS.map((symbol) => <button key={symbol} type="button" className="symbol" onPointerDown={(event) => start(event, symbol)} onClick={(event) => clickPalette(event, symbol)}>{symbol}</button>)}</aside>
     <button className="trash" ref={trash} type="button" aria-label="删除符号" onClick={() => setItems([])}><Trash size={40} weight="light" /></button>
   </main>
@@ -421,7 +465,8 @@ function mergeNear(items, id) {
   const text = canonicalFormula(first.text + second.text)
   const kind = kindFor(text)
   const metrics = formulaMetrics(text, first.fontSize)
-  const merged = { ...first, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, text, kind, held: false, ...metrics, vx: 0, vy: 0, anchorX: (first.x + second.x) / 2, anchorY: (first.y + second.y) / 2 }
+  const direction = forceDirection({ kind })
+  const merged = { ...first, x: (first.x + second.x) / 2, y: (first.y + second.y) / 2, text, kind, held: false, ...metrics, vx: 0, vy: 0, fieldScale: kind === 'gravity' ? (first.fieldScale ?? 1) : first.fieldScale, directionX: direction.x, directionY: direction.y, anchorX: (first.x + second.x) / 2, anchorY: (first.y + second.y) / 2 }
   return items.filter((item) => item.id !== current.id && item.id !== target.id).concat(merged)
 }
 
