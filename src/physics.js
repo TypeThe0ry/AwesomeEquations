@@ -548,7 +548,7 @@ export function unitFor(symbol, law) {
     W: 'J', P: 'W', p: 'kg·m/s', J: 'N·s', E: 'J', K: 'J', e: 'm', L: 'kg·m²/s',
     d: 'm', r: 'm', U: 'J', R: 'Ω', I: 'A', q: 'C', Q: 'C', B: 'T',
     G: 'N·m²/kg²', c: 'N·s/m', f: 'Hz', μ: '', ρ: 'kg/m³', ω: 'rad/s', λ: 'm',
-    θ: 'rad', τ: 'N·m', α: 'rad/s²', h: 'm', A: 'm²', V: 'm³', η: 'Pa·s',
+    θ: 'rad', τ: 'N·m', α: 'rad/s²', h: 'm', A: 'm²', V: 'm³', η: 'Pa·s', ΔT: 'K', ρfluid: 'kg/m³',
     m: 'kg', M: 'kg', T: 's', k: 'N/m', π: '', C: 'J/(kg·K)', S: 'm²', n: ''
   }
   if (symbol === 'V' && ['ohm', 'electricPower'].includes(law)) return 'V'
