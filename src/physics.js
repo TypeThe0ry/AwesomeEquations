@@ -581,6 +581,7 @@ export function defaultDirection(kind) {
 // visible vector turns with the rebound instead of remaining on its old axis.
 export function arrowSymbolFor(item) {
   const visual = visualFor(item)
+  if (!item.law) return isMass(item) ? 'v' : 'F'
   if (item.law === 'newton' || visual === 'acceleration') return 'a'
   if (item.law === 'momentum') return 'p'
   if (item.law === 'kineticEnergy') return 'E'
@@ -593,6 +594,7 @@ export function arrowSymbolFor(item) {
 
 export function arrowValueFor(item) {
   const live = { ...(item.values ?? {}), ...(item.liveValues ?? {}) }
+  if (!item.law) return live.v ?? live.a ?? 1
   const symbol = arrowSymbolFor(item)
   if (item.law === 'newton' || visualFor(item) === 'acceleration') return live.a ?? item.accelerationValue ?? item.outputValue
   if (item.law === 'kineticEnergy') return live.E ?? item.outputValue
@@ -601,7 +603,7 @@ export function arrowValueFor(item) {
 
 export function vectorFor(item) {
   const visual = visualFor(item)
-  const velocityVector = ['translation', 'wave', 'light', 'oscillator', 'momentum', 'kineticEnergy'].includes(visual) || ['momentum', 'kineticEnergy'].includes(item.law)
+  const velocityVector = isMass(item) || ['translation', 'wave', 'light', 'oscillator', 'momentum', 'kineticEnergy'].includes(visual) || ['momentum', 'kineticEnergy'].includes(item.law)
   const collisionVector = (item.collisionFlash ?? 0) > 0 && Math.hypot(item.vx ?? 0, item.vy ?? 0) > 1
   const useVelocity = velocityVector || collisionVector
   let vx = useVelocity ? (item.vx ?? 0) : (item.ax ?? 0)
@@ -613,7 +615,7 @@ export function vectorFor(item) {
     const raw = Math.abs(arrowValueFor(item) ?? (useVelocity ? length / PIXELS_PER_UNIT : length / PIXELS_PER_UNIT))
     return { x: vx / length, y: vy / length, length: arrowLength(raw), value: arrowValueFor(item) }
   }
-  const fallback = { x: item.directionX ?? defaultDirection(item.kind).x, y: item.directionY ?? defaultDirection(item.kind).y }
+  const fallback = isMass(item) ? { x: 0, y: 1 } : { x: item.directionX ?? defaultDirection(item.kind).x, y: item.directionY ?? defaultDirection(item.kind).y }
   const signed = Number(arrowValueFor(item) ?? 1)
   const sign = signed < 0 ? -1 : 1
   return { x: fallback.x * sign, y: fallback.y * sign, length: arrowLength(signed), value: signed }
