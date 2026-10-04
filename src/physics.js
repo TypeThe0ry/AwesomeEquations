@@ -38,31 +38,31 @@ const MODELS = {
     outputs: { F: ['m', 'a'], a: ['F', 'm'], m: ['F', 'a'] },
     formats: { F: 'F=ma', a: 'a=F/m', m: 'm=F/a' },
     defaults: { F: 100, m: 1, a: 100 },
-    rules: { F: p => p.m * p.a, a: p => p.F / Math.max(p.m, .01), m: p => p.F / Math.max(p.a, .01) },
+    rules: { F: p => p.m * p.a, a: p => p.F / safeDenom(p.m), m: p => p.F / safeDenom(p.a) },
   },
   weight: {
     outputs: { F: ['m', 'g'], g: ['F', 'm'], m: ['F', 'g'] },
     formats: { F: 'F=mg', g: 'g=F/m', m: 'm=F/g' },
     defaults: { F: 100, m: 1, g: 100 },
-    rules: { F: p => p.m * p.g, g: p => p.F / Math.max(p.m, .01), m: p => p.F / Math.max(p.g, .01) },
+    rules: { F: p => p.m * p.g, g: p => p.F / safeDenom(p.m), m: p => p.F / safeDenom(p.g) },
   },
   gravity: {
     outputs: { F: ['G', 'M', 'm', 'r'], a: ['G', 'M', 'r'] },
     formats: { F: 'F=GMm/r²', a: 'a=GM/r²' },
     defaults: { F: 100, G: 100, M: 100, m: 1, r: 10, a: 100 },
-    rules: { F: p => p.G * p.M * p.m / Math.max(p.r ** 2, .01), a: p => p.G * p.M / Math.max(p.r ** 2, .01) },
+    rules: { F: p => p.G * p.M * p.m / safeDenom(p.r ** 2), a: p => p.G * p.M / safeDenom(p.r ** 2) },
   },
   spring: {
     outputs: { F: ['k', 'x'], x: ['F', 'k'], k: ['F', 'x'] },
     formats: { F: 'F=−kx', x: 'x=−F/k', k: 'k=−F/x' },
     defaults: { F: -100, k: 100, x: 1 },
-    rules: { F: p => -p.k * p.x, x: p => -p.F / Math.max(p.k, .01), k: p => -p.F / Math.max(p.x, .01) },
+    rules: { F: p => -p.k * p.x, x: p => -p.F / safeDenom(p.k), k: p => -p.F / safeDenom(p.x) },
   },
   springEnergy: {
     outputs: { E: ['k', 'e'], k: ['E', 'e'] },
     formats: { E: '½ke²', k: 'k=2E/e²' },
     defaults: { E: 100, k: 100, e: 1 },
-    rules: { E: p => .5 * p.k * p.e ** 2, k: p => 2 * p.E / Math.max(p.e ** 2, .01) },
+    rules: { E: p => .5 * p.k * p.e ** 2, k: p => 2 * p.E / safeDenom(p.e ** 2) },
   },
   dampedSpring: {
     outputs: { F: ['k', 'x', 'c', 'v'] },
@@ -74,7 +74,7 @@ const MODELS = {
     outputs: { F: ['q', 'E'], q: ['F', 'E'], E: ['F', 'q'] },
     formats: { F: 'F=qE', q: 'q=F/E', E: 'E=F/q' },
     defaults: { F: 100, q: 1, E: 100 },
-    rules: { F: p => p.q * p.E, q: p => p.F / Math.max(p.E, .01), E: p => p.F / Math.max(p.q, .01) },
+    rules: { F: p => p.q * p.E, q: p => p.F / safeDenom(p.E), E: p => p.F / safeDenom(p.q) },
   },
   friction: {
     outputs: { F: ['μ', 'm', 'g'] },
@@ -86,7 +86,7 @@ const MODELS = {
     outputs: { F: ['c', 'v'], c: ['F', 'v'], v: ['F', 'c'] },
     formats: { F: 'F=−cv', c: 'c=−F/v', v: 'v=−F/c' },
     defaults: { F: -100, c: 100, v: 1 },
-    rules: { F: p => -p.c * p.v, c: p => -p.F / Math.max(p.v, .01), v: p => -p.F / Math.max(p.c, .01) },
+    rules: { F: p => -p.c * p.v, c: p => -p.F / safeDenom(p.v), v: p => -p.F / safeDenom(p.c) },
   },
   quadraticDrag: {
     outputs: { F: ['c', 'v'] },
@@ -104,7 +104,7 @@ const MODELS = {
     outputs: { F: ['m', 'v', 'r'] },
     formats: { F: 'F=mv²/r' },
     defaults: { F: 100, m: 1, v: 10, r: 10 },
-    rules: { F: p => p.m * p.v ** 2 / Math.max(p.r, .01) },
+    rules: { F: p => p.m * p.v ** 2 / safeDenom(p.r) },
   },
   angularCentripetal: {
     outputs: { F: ['m', 'ω', 'r'] },
@@ -128,49 +128,49 @@ const MODELS = {
     outputs: { p: ['m', 'v'], m: ['p', 'v'], v: ['p', 'm'] },
     formats: { p: 'p=mv', m: 'm=p/v', v: 'v=p/m' },
     defaults: { p: 100, m: 1, v: 100 },
-    rules: { p: p => p.m * p.v, m: p => p.p / Math.max(p.v, .01), v: p => p.p / Math.max(p.m, .01) },
+    rules: { p: p => p.m * p.v, m: p => p.p / safeDenom(p.v), v: p => p.p / safeDenom(p.m) },
   },
   kineticEnergy: {
     outputs: { E: ['m', 'v'], m: ['E', 'v'], v: ['E', 'm'] },
     formats: { E: 'E=½mv²', m: 'm=2E/v²' },
     defaults: { E: 100, m: 1, v: 10 },
-    rules: { E: p => .5 * p.m * p.v ** 2, m: p => 2 * p.E / Math.max(p.v ** 2, .01), v: p => Math.sqrt(Math.max(0, 2 * p.E / Math.max(p.m, .01))) },
+    rules: { E: p => .5 * p.m * p.v ** 2, m: p => 2 * p.E / safeDenom(p.v ** 2), v: p => Math.sqrt(Math.max(0, 2 * p.E / safeDenom(p.m))) },
   },
   work: {
     outputs: { W: ['F', 'd'], F: ['W', 'd'], d: ['W', 'F'] },
     formats: { W: 'W=Fd', F: 'F=W/d', d: 'd=W/F' },
     defaults: { W: 100, F: 100, d: 1 },
-    rules: { W: p => p.F * p.d, F: p => p.W / Math.max(p.d, .01), d: p => p.W / Math.max(p.F, .01) },
+    rules: { W: p => p.F * p.d, F: p => p.W / safeDenom(p.d), d: p => p.W / safeDenom(p.F) },
   },
   power: {
     outputs: { P: ['F', 'v'], F: ['P', 'v'], v: ['P', 'F'] },
     formats: { P: 'P=Fv', F: 'F=P/v', v: 'v=P/F' },
     defaults: { P: 100, F: 100, v: 1 },
-    rules: { P: p => p.F * p.v, F: p => p.P / Math.max(p.v, .01), v: p => p.P / Math.max(p.F, .01) },
+    rules: { P: p => p.F * p.v, F: p => p.P / safeDenom(p.v), v: p => p.P / safeDenom(p.F) },
   },
   wave: {
     outputs: { v: ['f', 'λ'], f: ['v', 'λ'], λ: ['v', 'f'] },
     formats: { v: 'v=fλ', f: 'f=v/λ', λ: 'λ=v/f' },
     defaults: { v: 100, f: 10, λ: 10 },
-    rules: { v: p => p.f * p.λ, f: p => p.v / Math.max(p.λ, .01), λ: p => p.v / Math.max(p.f, .01) },
+    rules: { v: p => p.f * p.λ, f: p => p.v / safeDenom(p.λ), λ: p => p.v / safeDenom(p.f) },
   },
   coulomb: {
     outputs: { F: ['k', 'Q', 'q', 'r'], q: ['F', 'k', 'Q', 'r'] },
     formats: { F: 'F=kQq/r²', q: 'q=Fr²/kQ' },
     defaults: { F: 100, k: 100, Q: 1, q: 1, r: 1 },
-    rules: { F: p => p.k * p.Q * p.q / Math.max(p.r ** 2, .01), q: p => p.F * p.r ** 2 / Math.max(p.k * p.Q, .01) },
+    rules: { F: p => p.k * p.Q * p.q / safeDenom(p.r ** 2), q: p => p.F * p.r ** 2 / safeDenom(p.k * p.Q) },
   },
   ohm: {
     outputs: { V: ['I', 'R'], I: ['V', 'R'], R: ['V', 'I'] },
     formats: { V: 'V=IR', I: 'I=V/R', R: 'R=V/I' },
     defaults: { V: 100, I: 10, R: 10 },
-    rules: { V: p => p.I * p.R, I: p => p.V / Math.max(p.R, .01), R: p => p.V / Math.max(p.I, .01) },
+    rules: { V: p => p.I * p.R, I: p => p.V / safeDenom(p.R), R: p => p.V / safeDenom(p.I) },
   },
   electricPower: {
     outputs: { P: ['V', 'I'], V: ['P', 'I'], I: ['P', 'V'] },
     formats: { P: 'P=VI', V: 'V=P/I', I: 'I=P/V' },
     defaults: { P: 100, V: 10, I: 10 },
-    rules: { P: p => p.V * p.I, V: p => p.P / Math.max(p.I, .01), I: p => p.P / Math.max(p.V, .01) },
+    rules: { P: p => p.V * p.I, V: p => p.P / safeDenom(p.I), I: p => p.P / safeDenom(p.V) },
   },
   heat: {
     outputs: { Q: ['m', 'c', 'T'] },
@@ -182,11 +182,12 @@ const MODELS = {
     outputs: { E: ['h', 'f'], h: ['E', 'f'], f: ['E', 'h'] },
     formats: { E: 'E=hf', h: 'h=E/f', f: 'f=E/h' },
     defaults: { E: 100, h: 10, f: 10 },
-    rules: { E: p => p.h * p.f, h: p => p.E / Math.max(p.f, .01), f: p => p.E / Math.max(p.h, .01) },
+    rules: { E: p => p.h * p.f, h: p => p.E / safeDenom(p.f), f: p => p.E / safeDenom(p.h) },
   },
 }
 
 const modelFor = (law) => MODELS[law] ?? null
+const safeDenom = (value) => Math.abs(value) < .01 ? (value < 0 ? -.01 : .01) : value
 
 const signature = (text) => [...normalize(text).replace(/[=+\-/]/g, '')].sort().join('')
 const snippets = new Set(['mg', 'GMm', 'kx', 'cv', 'qE', 'IR', 'VI', 'mcT', 'hf'])
@@ -243,8 +244,12 @@ export function refreshFormula(item) {
   const massValue = Math.max(Math.abs(values.m ?? item.massValue ?? 1), .01)
   const accelerationValue = Number.isFinite(values.a) ? values.a : forceValue / massValue
   const speedValue = Number.isFinite(values.v) ? values.v : item.speedValue
+  const fieldForceValue = ['gravity', 'coulomb'].includes(item.kind)
+    ? Math.abs(outputValue * (item.kind === 'gravity' && item.outputSymbol === 'a' ? massValue : 1))
+    : undefined
   const parameters = Object.fromEntries(inputSymbols.map((symbol) => [symbol, values[symbol]]))
-  const arrowValue = ['work', 'power'].includes(item.law) || item.outputSymbol === 'F'
+  const arrowValue = item.kind === 'newton' ? accelerationValue
+    : ['work', 'power'].includes(item.law) || item.outputSymbol === 'F'
     ? forceValue
     : item.kind === 'newton' && item.outputSymbol !== 'F' ? accelerationValue : outputValue
   return {
@@ -256,6 +261,7 @@ export function refreshFormula(item) {
     massValue,
     accelerationValue,
     speedValue,
+    fieldForceValue,
     arrowValue,
     // Keep the arrow readable while preserving the exact calculated value below the formula.
     magnitude: clamp(Math.abs(arrowValue) || 28, 28, 360),
@@ -263,6 +269,11 @@ export function refreshFormula(item) {
 }
 
 export const isField = (item) => ['gravity', 'coulomb'].includes(item.kind)
+// `fieldScale` is the user-controlled multiplier. The automatic component follows
+// the force represented by the equation so changing G, M, m, r, k, Q, or q also
+// changes the drawn field immediately.
+export const fieldAutoScale = (item) => clamp(Math.sqrt(Math.abs(item.fieldForceValue ?? item.forceValue ?? item.outputValue ?? 100) / 100), .45, 3)
+export const fieldScaleFor = (item) => clamp((item.fieldScale ?? 1) * fieldAutoScale(item), .35, 4)
 export const isSpringSource = (item) => ['spring', 'springEnergy'].includes(item.kind)
 export const isDynamic = (item) => !['letter', 'invalid', 'law', 'gravity', 'coulomb', 'springEnergy'].includes(item.kind)
 export const isDirectional = (item) => ['newton', 'weight', 'electric', 'momentum', 'kineticEnergy', 'work', 'power', 'wave'].includes(item.kind)
@@ -377,6 +388,7 @@ export function resetMotion(item, viewport = { width: 1200, height: 800 }) {
     directionX: direction.x, directionY: direction.y,
     anchorX: item.x, anchorY: item.y, radius,
     fieldScale: item.fieldScale ?? 1, magnitude,
+    massValue: item.massValue ?? 1,
     wavePhase: 0, travelled: 0,
   }
   if (item.kind === 'centripetal') {
@@ -400,7 +412,7 @@ export function fieldAcceleration(item, fields) {
     const distance = Math.max(Math.hypot(dx, dy), 90)
     // Coulomb: like charges repel. Gravity: masses attract. Neither has a hard range cutoff.
     const sign = field.kind === 'coulomb' ? -1 : 1
-    const strength = sign * 12_000_000 * (field.fieldScale ?? 1) / distance ** 2
+    const strength = sign * 12_000_000 * fieldScaleFor(field) / distance ** 2
     return { ax: sum.ax + dx / distance * strength, ay: sum.ay + dy / distance * strength }
   }, { ax: 0, ay: 0 })
 }
@@ -546,6 +558,16 @@ export function changeArrow(item, directionX, directionY, magnitude) {
     }
     next.forceValue = magnitude
     next.arrowValue = magnitude
+  }
+  if (item.kind === 'spring' && item.outputSymbol === 'F') {
+    // The spring arrow is the force readout. Its length controls k while the
+    // signed force still follows F = -kx (or the nonlinear/damped variant).
+    const updated = refreshFormula({ ...next, parameters: { ...item.parameters, k: magnitude } })
+    updated.directionX = directionX
+    updated.directionY = directionY
+    updated.anchorX = item.x + directionX * 60
+    updated.anchorY = item.y + directionY * 60
+    return updated
   }
   if (item.kind === 'work') {
     // Re-aiming the work arrow starts a fresh displacement run with the new force.
