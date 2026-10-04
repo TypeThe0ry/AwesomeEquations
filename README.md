@@ -10,7 +10,14 @@ Equation World lets you drag mathematical symbols onto a canvas, arrange them in
 
 - Drag or click symbols to compose equations.
 - Parse multiple equations as active laws.
-- Run a small mechanics world with Newtonian force, gravity, and spring rules.
+- Run a mechanics world with force, gravity, spring, friction, drag, impulse,
+  kinematics, energy, momentum, torque, rotation, pendulum, fluid, and collision rules.
+- Use 49 supported relations, including `F=ma`, `F=GMm/r²`, `F=−kx`,
+  `v=u+at`, `s=ut+½at²`, `J=Ft`, `p=mv`, `E=½mv²`, `U=mgh`,
+  `L=mvr`, `τ=Iα`, `I=mr²`, `P=F/A`, `P=ρgh`, and `F=ρVg`.
+- Place completed equations together to create an interaction group. Linked
+  force laws act on the same moving formulas, while fields, springs, and
+  collisions continue to work across the whole canvas.
 - Switch between Mechanics, Electromagnetism, Thermodynamics, and Quantum symbol domains.
 - Start from Gravity, Spring, Ohm, Heat, or Wave presets.
 
