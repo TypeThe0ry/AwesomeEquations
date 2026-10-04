@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Trash } from '@phosphor-icons/react'
 import './styles.css'
-import { clamp, normalize, resolveFormula, defaultDirection, resetMotion, isField, isDynamic, isDirectional, isSpringSource, stepItem, changeArrow } from './physics.js'
+import { clamp, normalize, resolveFormula, defaultDirection, resetMotion, isField, isDynamic, isDirectional, isSpringSource, stepItem, changeArrow, resolveWorldCollisions } from './physics.js'
 
 const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'x', 't', 'W', 'P', 'p', 'E', 'e', 'k', 'L', 'd', 'r', 'U', 'R', 'I', 'q', 'B', 'G', 'c', 'f', 'μ', 'ρ', 'ω', 'λ', 'θ', 'Q', 'T', '½', 'h', 'n', 'C', 'S', 'V']
 const FONT = 76
@@ -181,6 +181,7 @@ function App() {
           if (isSpringSource(item) && attachedMass) return { ...item, vx: 0, vy: 0 }
           const spring = current.find((other) => other.id === item.attachedTo && isSpringSource(other))
           const updated = stepItem(item, dt, fields, spring)
+          updated.collisionFlash = Math.max(0, (item.collisionFlash ?? 0) - dt)
           updated.trail = item.trail.filter((point) => now - point.time < (item.kind === 'wave' ? 1800 : 700))
           const half = updated.width / 2
           if (updated.x < half || updated.x > width - half - 15) {
@@ -202,7 +203,7 @@ function App() {
           }
           return updated
         })
-        return next
+        return resolveWorldCollisions(next, { width, floor })
       })
       frame = requestAnimationFrame(tick)
     }
@@ -280,11 +281,19 @@ function App() {
         context.beginPath(); context.moveTo(startX, startY); context.lineTo(endX, endY); context.stroke()
         context.beginPath(); context.moveTo(endX, endY); context.lineTo(endX - directionX * 11 - directionY * 5, endY - directionY * 11 + directionX * 5); context.lineTo(endX - directionX * 11 + directionY * 5, endY - directionY * 11 - directionX * 5); context.closePath(); context.fill()
         context.font = 'italic 19px Times New Roman'
-        const label = { newton: 'a', momentum: 'p', kineticEnergy: 'E', power: 'P', wave: 'v' }[item.kind] ?? 'F'
+        const label = { newton: 'a', momentum: 'p', kineticEnergy: 'E', wave: 'v' }[item.kind] ?? 'F'
         context.fillText(label, endX + directionX * 7 - 6, endY + directionY * 7 - 9)
         const speed = Math.hypot(item.vx, item.vy)
         context.font = 'italic 14px Times New Roman'
-        context.fillText(`v = ${(speed / 100).toFixed(2)}`, item.x - item.width / 2, item.y + item.height / 2 + 18)
+        const measure = item.kind === 'work' ? `d = ${(item.travelled / 100).toFixed(2)}` : `v = ${(speed / 100).toFixed(2)}`
+        context.fillText(measure, item.x - item.width / 2, item.y + item.height / 2 + 18)
+        if (item.collisionFlash > 0) {
+          context.strokeStyle = `rgba(69, 65, 59, ${item.collisionFlash * 2.4})`
+          context.lineWidth = 1.2
+          context.beginPath()
+          context.arc(item.x, item.y, Math.max(item.width, item.height) * (.42 + item.collisionFlash), 0, Math.PI * 2)
+          context.stroke()
+        }
       })
       frame = requestAnimationFrame(draw)
     }
@@ -376,7 +385,7 @@ function App() {
   return <main className="sandbox" onPointerDown={beginCanvas} onPointerMove={move} onPointerUp={release} onPointerCancel={(event) => release(event, true)}>
     <canvas ref={canvas} className="effects" aria-hidden="true" />
     <div className="floor" aria-hidden="true" />
-    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize }} data-equation={item.text} data-kind={item.kind} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item)}</span></div>)}
+    {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize }} data-equation={item.text} data-kind={item.kind} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item)}</span></div>)}
     <aside className="palette" ref={palette}>{SYMBOLS.map((symbol) => <button key={symbol} type="button" className="symbol" onPointerDown={(event) => start(event, symbol)} onClick={(event) => clickPalette(event, symbol)}>{symbol}</button>)}</aside>
     <button className="trash" ref={trash} type="button" aria-label="删除符号" onClick={() => setItems([])}><Trash size={40} weight="light" /></button>
   </main>
