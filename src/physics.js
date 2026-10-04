@@ -52,7 +52,7 @@ export const isSpringSource = (item) => ['spring', 'springEnergy'].includes(item
 export const isDynamic = (item) => !['letter', 'invalid', 'law', 'gravity', 'coulomb', 'springEnergy'].includes(item.kind)
 export const isDirectional = (item) => ['newton', 'weight', 'electric', 'momentum', 'kineticEnergy', 'work', 'power', 'wave'].includes(item.kind)
 export const isMass = (item) => item.kind === 'letter' && item.text === 'm'
-export const isCharged = (item) => item.text.includes('q') || (item.kind === 'letter' && item.text === 'q')
+export const isCharged = (item) => (isDynamic(item) || item.kind === 'letter') && item.text.includes('q')
 
 export function defaultDirection(kind) {
   return kind === 'weight' ? { x: 0, y: 1 } : kind === 'newton' ? { x: -1, y: 0 } : { x: 1, y: 0 }
