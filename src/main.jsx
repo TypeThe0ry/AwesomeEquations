@@ -355,7 +355,7 @@ function App() {
       setItems((current) => current.map((item) => {
         if (item.id !== active.id) return item
         const scale = Math.max(Math.abs(active.startValue) * .012, .03)
-        const minimum = ['m', 'r', 'k', 'c', 'f', 'λ', 'E', 'R'].includes(active.symbol) ? .01 : -1000
+        const minimum = ['m', 'r', 'k', 'c', 'f', 'λ', 'E', 'R', 't', 'T', 'A', 'V', 'π', 'η'].includes(active.symbol) ? .01 : -1000
         const maximum = 1000
         const value = clamp(active.startValue + (active.startY - event.clientY) * scale, minimum, maximum)
         const updated = refreshFormula({ ...item, parameters: { ...item.parameters, [active.symbol]: value } })
