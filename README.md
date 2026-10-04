@@ -1,4 +1,5 @@
-# Equation World
+# AwesomeEquations
+
 
 > A physics sandbox where equations become executable laws. Made entirely by AI
 
