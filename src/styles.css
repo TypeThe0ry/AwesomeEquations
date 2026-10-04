@@ -19,6 +19,8 @@ button { font: inherit; color: inherit; }
 .formula.invalid { color: #b34a43; }
 .formula.held { z-index: 8; cursor: grabbing; }
 .formula-math sup { font-size: .46em; line-height: 0; vertical-align: .72em; margin-left: .03em; }
+.formula-variable { cursor: ns-resize; border-radius: .08em; }
+.formula-variable:hover { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: .08em; }
 .fraction-equation { display: inline-flex; align-items: center; }
 .gravity-formula { display: inline-flex; align-items: center; gap: .06em; }
 .energy-formula { display: inline-flex; align-items: baseline; gap: .02em; }
