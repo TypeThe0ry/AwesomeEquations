@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Trash } from '@phosphor-icons/react'
 import './styles.css'
-import { clamp, normalize, resolveFormula, defaultDirection, resetMotion, isField, isDynamic, isDirectional, isMass, isSpringSource, stepItem, changeArrow } from './physics.js'
+import { clamp, normalize, resolveFormula, defaultDirection, resetMotion, isField, isDynamic, isDirectional, isSpringSource, stepItem, changeArrow } from './physics.js'
 
 const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'x', 't', 'W', 'P', 'p', 'E', 'e', 'k', 'L', 'd', 'r', 'U', 'R', 'I', 'q', 'B', 'G', 'c', 'f', 'μ', 'ρ', 'ω', 'λ', 'θ', 'Q', 'T', '½', 'h', 'n', 'C', 'S', 'V']
 const FONT = 76
@@ -22,7 +22,7 @@ function formulaMetrics(text, fontSize) {
     const prefix = equals >= 0 ? text.slice(0, equals + 1) : ''
     const numerator = text.slice(prefix.length, slash)
     const denominator = text.slice(slash + 1)
-    return { width: (glyphUnits(prefix) + Math.max(glyphUnits(numerator), glyphUnits(denominator)) * .88 + .42) * fontSize, height: fontSize * 1.32 }
+    return { width: (glyphUnits(prefix) + Math.max(glyphUnits(numerator), glyphUnits(denominator)) * .88 + .42) * fontSize, height: fontSize * 1.6 }
   }
   return { width: glyphWidth(text, fontSize), height: fontSize }
 }
@@ -132,7 +132,7 @@ function displayFormula(formula) {
   if (slash < 0) return <MathText text={formula.text} />
   const equals = formula.text.indexOf('=')
   const prefix = equals >= 0 ? formula.text.slice(0, equals + 1) : ''
-  return <><MathText text={prefix} /><Fraction numerator={formula.text.slice(prefix.length, slash)} denominator={formula.text.slice(slash + 1)} /></>
+  return <span className="fraction-equation"><MathText text={prefix} /><Fraction numerator={formula.text.slice(prefix.length, slash)} denominator={formula.text.slice(slash + 1)} /></span>
 }
 
 function Fraction({ numerator, denominator }) {
