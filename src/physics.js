@@ -477,6 +477,8 @@ export function resolveEnteredFormula(raw) {
         : outputSymbol === 'a' ? 'acceleration' : unitContext === 'springEnergy' ? 'spring'
           : ['v', 'p', 'E'].includes(outputSymbol) ? 'translation'
             : outputSymbol === 'x' && (inputSymbols.includes('A') || inputSymbols.includes('ω')) ? 'oscillator'
+        : outputSymbol === 'W' && inputSymbols.includes('F') ? 'work'
+          : outputSymbol === 'P' && inputSymbols.includes('F') && inputSymbols.includes('v') ? 'power'
             : ['τ', 'α', 'ω', 'I', 'K'].includes(outputSymbol) ? 'rotor'
               : unitContext === 'ohm' ? 'circuit' : unitContext === 'springEnergy' ? 'spring' : 'quantity'
     return { text: text.replaceAll('-', '−'), kind: 'expression', law: 'expression', outputSymbol, inputSymbols, expression, visual, unitContext,
@@ -582,6 +584,7 @@ export function arrowSymbolFor(item) {
   if (item.law === 'momentum') return 'p'
   if (item.law === 'kineticEnergy') return 'E'
   if (visual === 'translation' || visual === 'wave' || visual === 'light') return item.outputSymbol ?? 'v'
+  if (visual === 'work' || visual === 'power') return 'F'
   if (visual === 'rotor') return item.outputSymbol === 'α' ? 'α' : item.outputSymbol === 'ω' ? 'ω' : 'τ'
   if (item.law === 'impulse') return 'J'
   return item.outputSymbol ?? 'F'
