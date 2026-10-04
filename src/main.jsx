@@ -183,20 +183,6 @@ function App() {
           const updated = stepItem(item, dt, fields, spring)
           updated.collisionFlash = Math.max(0, (item.collisionFlash ?? 0) - dt)
           updated.trail = item.trail.filter((point) => now - point.time < (item.kind === 'wave' ? 1800 : 700))
-          const half = updated.width / 2
-          if (updated.x < half || updated.x > width - half - 15) {
-            updated.x = clamp(updated.x, half, width - half - 15)
-            updated.vx *= -.48
-          }
-          if (updated.y - updated.height * .45 < 0) {
-            updated.y = updated.height * .45
-            updated.vy = Math.abs(updated.vy) * .45
-          }
-          if (updated.y + updated.height * .18 > floor) {
-            updated.y = floor - updated.height * .18
-            updated.vy = Math.abs(updated.vy) > 50 ? -updated.vy * .2 : 0
-            updated.vx *= Math.exp(-5 * dt)
-          }
           if (isDynamic(updated) && Math.hypot(updated.vx, updated.vy) > 8 && (!updated.trail.length || now - updated.trail.at(-1).time > 32)) {
             const amplitude = updated.kind === 'wave' ? Math.sin(updated.wavePhase) * 22 : 0
             updated.trail.push({ x: updated.x - updated.directionY * amplitude, y: updated.y + updated.directionX * amplitude, time: now })
