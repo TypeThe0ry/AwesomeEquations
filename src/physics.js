@@ -31,20 +31,235 @@ export const EQUATIONS = [
   { id: 'photon', text: 'E=hf', recipe: 'Ehf', kind: 'law' },
 ]
 
+// Each relation can be read in more than one direction. The left-hand symbol is
+// the output; the remaining symbols become draggable inputs in the canvas.
+const MODELS = {
+  newton: {
+    outputs: { F: ['m', 'a'], a: ['F', 'm'], m: ['F', 'a'] },
+    formats: { F: 'F=ma', a: 'a=F/m', m: 'm=F/a' },
+    defaults: { F: 100, m: 1, a: 100 },
+    rules: { F: p => p.m * p.a, a: p => p.F / Math.max(p.m, .01), m: p => p.F / Math.max(p.a, .01) },
+  },
+  weight: {
+    outputs: { F: ['m', 'g'], g: ['F', 'm'], m: ['F', 'g'] },
+    formats: { F: 'F=mg', g: 'g=F/m', m: 'm=F/g' },
+    defaults: { F: 100, m: 1, g: 100 },
+    rules: { F: p => p.m * p.g, g: p => p.F / Math.max(p.m, .01), m: p => p.F / Math.max(p.g, .01) },
+  },
+  gravity: {
+    outputs: { F: ['G', 'M', 'm', 'r'], a: ['G', 'M', 'r'] },
+    formats: { F: 'F=GMm/r²', a: 'a=GM/r²' },
+    defaults: { F: 100, G: 100, M: 100, m: 1, r: 10, a: 100 },
+    rules: { F: p => p.G * p.M * p.m / Math.max(p.r ** 2, .01), a: p => p.G * p.M / Math.max(p.r ** 2, .01) },
+  },
+  spring: {
+    outputs: { F: ['k', 'x'], x: ['F', 'k'], k: ['F', 'x'] },
+    formats: { F: 'F=−kx', x: 'x=−F/k', k: 'k=−F/x' },
+    defaults: { F: -100, k: 100, x: 1 },
+    rules: { F: p => -p.k * p.x, x: p => -p.F / Math.max(p.k, .01), k: p => -p.F / Math.max(p.x, .01) },
+  },
+  springEnergy: {
+    outputs: { E: ['k', 'e'], k: ['E', 'e'] },
+    formats: { E: '½ke²', k: 'k=2E/e²' },
+    defaults: { E: 100, k: 100, e: 1 },
+    rules: { E: p => .5 * p.k * p.e ** 2, k: p => 2 * p.E / Math.max(p.e ** 2, .01) },
+  },
+  dampedSpring: {
+    outputs: { F: ['k', 'x', 'c', 'v'] },
+    formats: { F: 'F=−kx−cv' },
+    defaults: { F: -100, k: 100, x: 1, c: 10, v: 0 },
+    rules: { F: p => -p.k * p.x - p.c * p.v },
+  },
+  electric: {
+    outputs: { F: ['q', 'E'], q: ['F', 'E'], E: ['F', 'q'] },
+    formats: { F: 'F=qE', q: 'q=F/E', E: 'E=F/q' },
+    defaults: { F: 100, q: 1, E: 100 },
+    rules: { F: p => p.q * p.E, q: p => p.F / Math.max(p.E, .01), E: p => p.F / Math.max(p.q, .01) },
+  },
+  friction: {
+    outputs: { F: ['μ', 'm', 'g'] },
+    formats: { F: 'F=−μmg' },
+    defaults: { F: -100, μ: 1, m: 1, g: 100 },
+    rules: { F: p => -p.μ * p.m * p.g },
+  },
+  drag: {
+    outputs: { F: ['c', 'v'], c: ['F', 'v'], v: ['F', 'c'] },
+    formats: { F: 'F=−cv', c: 'c=−F/v', v: 'v=−F/c' },
+    defaults: { F: -100, c: 100, v: 1 },
+    rules: { F: p => -p.c * p.v, c: p => -p.F / Math.max(p.v, .01), v: p => -p.F / Math.max(p.c, .01) },
+  },
+  quadraticDrag: {
+    outputs: { F: ['c', 'v'] },
+    formats: { F: 'F=−cv²' },
+    defaults: { F: -100, c: 100, v: 1 },
+    rules: { F: p => -p.c * p.v ** 2 },
+  },
+  magnetic: {
+    outputs: { F: ['q', 'v', 'B'] },
+    formats: { F: 'F=qvB' },
+    defaults: { F: 100, q: 1, v: 1, B: 100 },
+    rules: { F: p => p.q * p.v * p.B },
+  },
+  centripetal: {
+    outputs: { F: ['m', 'v', 'r'] },
+    formats: { F: 'F=mv²/r' },
+    defaults: { F: 100, m: 1, v: 10, r: 10 },
+    rules: { F: p => p.m * p.v ** 2 / Math.max(p.r, .01) },
+  },
+  angularCentripetal: {
+    outputs: { F: ['m', 'ω', 'r'] },
+    formats: { F: 'F=mω²r' },
+    defaults: { F: 100, m: 1, ω: 10, r: 1 },
+    rules: { F: p => p.m * p.ω ** 2 * p.r },
+  },
+  pendulum: {
+    outputs: { F: ['m', 'g', 'θ'] },
+    formats: { F: 'F=−mgθ' },
+    defaults: { F: -45, m: 1, g: 100, θ: .45 },
+    rules: { F: p => -p.m * p.g * p.θ },
+  },
+  nonlinearSpring: {
+    outputs: { F: ['k', 'x'] },
+    formats: { F: 'F=−kx³' },
+    defaults: { F: -100, k: 100, x: 1 },
+    rules: { F: p => -p.k * p.x ** 3 },
+  },
+  momentum: {
+    outputs: { p: ['m', 'v'], m: ['p', 'v'], v: ['p', 'm'] },
+    formats: { p: 'p=mv', m: 'm=p/v', v: 'v=p/m' },
+    defaults: { p: 100, m: 1, v: 100 },
+    rules: { p: p => p.m * p.v, m: p => p.p / Math.max(p.v, .01), v: p => p.p / Math.max(p.m, .01) },
+  },
+  kineticEnergy: {
+    outputs: { E: ['m', 'v'], m: ['E', 'v'], v: ['E', 'm'] },
+    formats: { E: 'E=½mv²', m: 'm=2E/v²' },
+    defaults: { E: 100, m: 1, v: 10 },
+    rules: { E: p => .5 * p.m * p.v ** 2, m: p => 2 * p.E / Math.max(p.v ** 2, .01), v: p => Math.sqrt(Math.max(0, 2 * p.E / Math.max(p.m, .01))) },
+  },
+  work: {
+    outputs: { W: ['F', 'd'], F: ['W', 'd'], d: ['W', 'F'] },
+    formats: { W: 'W=Fd', F: 'F=W/d', d: 'd=W/F' },
+    defaults: { W: 100, F: 100, d: 1 },
+    rules: { W: p => p.F * p.d, F: p => p.W / Math.max(p.d, .01), d: p => p.W / Math.max(p.F, .01) },
+  },
+  power: {
+    outputs: { P: ['F', 'v'], F: ['P', 'v'], v: ['P', 'F'] },
+    formats: { P: 'P=Fv', F: 'F=P/v', v: 'v=P/F' },
+    defaults: { P: 100, F: 100, v: 1 },
+    rules: { P: p => p.F * p.v, F: p => p.P / Math.max(p.v, .01), v: p => p.P / Math.max(p.F, .01) },
+  },
+  wave: {
+    outputs: { v: ['f', 'λ'], f: ['v', 'λ'], λ: ['v', 'f'] },
+    formats: { v: 'v=fλ', f: 'f=v/λ', λ: 'λ=v/f' },
+    defaults: { v: 100, f: 10, λ: 10 },
+    rules: { v: p => p.f * p.λ, f: p => p.v / Math.max(p.λ, .01), λ: p => p.v / Math.max(p.f, .01) },
+  },
+  coulomb: {
+    outputs: { F: ['k', 'Q', 'q', 'r'], q: ['F', 'k', 'Q', 'r'] },
+    formats: { F: 'F=kQq/r²', q: 'q=Fr²/kQ' },
+    defaults: { F: 100, k: 100, Q: 1, q: 1, r: 1 },
+    rules: { F: p => p.k * p.Q * p.q / Math.max(p.r ** 2, .01), q: p => p.F * p.r ** 2 / Math.max(p.k * p.Q, .01) },
+  },
+  ohm: {
+    outputs: { V: ['I', 'R'], I: ['V', 'R'], R: ['V', 'I'] },
+    formats: { V: 'V=IR', I: 'I=V/R', R: 'R=V/I' },
+    defaults: { V: 100, I: 10, R: 10 },
+    rules: { V: p => p.I * p.R, I: p => p.V / Math.max(p.R, .01), R: p => p.V / Math.max(p.I, .01) },
+  },
+  electricPower: {
+    outputs: { P: ['V', 'I'], V: ['P', 'I'], I: ['P', 'V'] },
+    formats: { P: 'P=VI', V: 'V=P/I', I: 'I=P/V' },
+    defaults: { P: 100, V: 10, I: 10 },
+    rules: { P: p => p.V * p.I, V: p => p.P / Math.max(p.I, .01), I: p => p.P / Math.max(p.V, .01) },
+  },
+  heat: {
+    outputs: { Q: ['m', 'c', 'T'] },
+    formats: { Q: 'Q=mcT' },
+    defaults: { Q: 100, m: 1, c: 10, T: 10 },
+    rules: { Q: p => p.m * p.c * p.T },
+  },
+  photon: {
+    outputs: { E: ['h', 'f'], h: ['E', 'f'], f: ['E', 'h'] },
+    formats: { E: 'E=hf', h: 'h=E/f', f: 'f=E/h' },
+    defaults: { E: 100, h: 10, f: 10 },
+    rules: { E: p => p.h * p.f, h: p => p.E / Math.max(p.f, .01), f: p => p.E / Math.max(p.h, .01) },
+  },
+}
+
+const modelFor = (law) => MODELS[law] ?? null
+
 const signature = (text) => [...normalize(text).replace(/[=+\-/]/g, '')].sort().join('')
 const snippets = new Set(['mg', 'GMm', 'kx', 'cv', 'qE', 'IR', 'VI', 'mcT', 'hf'])
+
+function outputFromRaw(raw, model, fallback) {
+  if (!model) return fallback
+  const value = normalize(raw)
+  const left = value.includes('=') ? value.slice(0, value.indexOf('=')) : value
+  const candidate = [...left].find((symbol) => model.outputs[symbol]) ?? [...value].find((symbol) => model.outputs[symbol])
+  return candidate ?? fallback
+}
+
+function formulaText(law, output, fallback) {
+  return modelFor(law)?.formats?.[output] ?? fallback
+}
+
 export function resolveFormula(raw) {
   const value = normalize(raw)
   // An explicitly entered equation must match a supported law, not just contain its letters.
   let equation = EQUATIONS.find((law) => [law.text, ...(law.aliases ?? [])].some((text) => normalize(text) === value))
-  if (!equation && !value.includes('=')) {
+  if (!equation) {
     equation = EQUATIONS.find((law) => [law.recipe, ...(law.recipes ?? [])].some((recipe) => {
       if (signature(recipe) === signature(value)) return true
       return law.text.includes('²') && !recipe.includes('²') && signature(recipe + '²') === signature(value)
     }))
   }
-  if (equation) return { text: equation.text, kind: equation.kind, law: equation.id }
+  if (equation) {
+    const model = modelFor(equation.id)
+    const fallbackOutput = model ? Object.keys(model.outputs)[0] : null
+    const outputSymbol = outputFromRaw(raw, model, fallbackOutput)
+    const inputSymbols = model?.outputs?.[outputSymbol] ?? []
+    return {
+      text: formulaText(equation.id, outputSymbol, equation.text),
+      kind: equation.kind,
+      law: equation.id,
+      outputSymbol,
+      inputSymbols,
+    }
+  }
   return { text: raw, kind: [...value].length <= 1 || snippets.has(value) ? 'letter' : 'invalid', law: null }
+}
+
+export function refreshFormula(item) {
+  const model = modelFor(item.law)
+  if (!model || !item.outputSymbol) return item
+  const inputSymbols = model.outputs[item.outputSymbol] ?? item.inputSymbols ?? []
+  const values = { ...model.defaults }
+  inputSymbols.forEach((symbol) => {
+    if (Number.isFinite(item.parameters?.[symbol])) values[symbol] = item.parameters[symbol]
+  })
+  const outputValue = model.rules[item.outputSymbol]?.(values) ?? values[item.outputSymbol] ?? 0
+  values[item.outputSymbol] = outputValue
+  const forceValue = Number.isFinite(values.F) ? values.F : item.forceValue ?? outputValue
+  const massValue = Math.max(Math.abs(values.m ?? item.massValue ?? 1), .01)
+  const accelerationValue = Number.isFinite(values.a) ? values.a : forceValue / massValue
+  const speedValue = Number.isFinite(values.v) ? values.v : item.speedValue
+  const parameters = Object.fromEntries(inputSymbols.map((symbol) => [symbol, values[symbol]]))
+  const arrowValue = ['work', 'power'].includes(item.law) || item.outputSymbol === 'F'
+    ? forceValue
+    : item.kind === 'newton' && item.outputSymbol !== 'F' ? accelerationValue : outputValue
+  return {
+    ...item,
+    inputSymbols,
+    parameters,
+    outputValue,
+    forceValue,
+    massValue,
+    accelerationValue,
+    speedValue,
+    arrowValue,
+    // Keep the arrow readable while preserving the exact calculated value below the formula.
+    magnitude: clamp(Math.abs(arrowValue) || 28, 28, 360),
+  }
 }
 
 export const isField = (item) => ['gravity', 'coulomb'].includes(item.kind)
@@ -154,8 +369,8 @@ export function resetMotion(item, viewport = { width: 1200, height: 800 }) {
   let vx = 0, vy = 0
   if (['friction', 'drag', 'quadraticDrag', 'magnetic'].includes(item.kind)) vx = 180
   if (item.kind === 'spring') vx = 130
-  if (item.kind === 'momentum' || item.kind === 'wave') vx = magnitude * 1.6
-  if (item.kind === 'kineticEnergy') vx = Math.sqrt(200 * magnitude)
+  if (item.kind === 'momentum' || item.kind === 'wave') vx = item.speedValue ?? magnitude * 1.6
+  if (item.kind === 'kineticEnergy') vx = item.speedValue ?? Math.sqrt(200 * magnitude)
   if (item.kind === 'power') vx = 40
   const motion = {
     vx, vy, ax: 0, ay: 0, age: 0, trail: [],
@@ -211,14 +426,17 @@ export function stepItem(item, dt, fields = [], spring = null) {
     let ax = 0, ay = isMass(next) ? 620 : 0
     const magnitude = next.magnitude ?? 100
     if (['newton', 'weight', 'electric', 'work'].includes(next.kind)) {
-      const strength = next.kind === 'work' && next.travelled > 160 ? 0 : magnitude
+      const strength = next.kind === 'work' && next.travelled > 160 ? 0
+        : next.kind === 'work' ? (next.forceValue ?? magnitude)
+          : (next.accelerationValue ?? magnitude)
       ax = next.directionX * strength
       ay = next.directionY * strength
     }
     if (next.kind === 'power') {
       const speed = Math.max(Math.hypot(next.vx, next.vy), 30)
-      ax = next.directionX * (magnitude * 100 / speed)
-      ay = next.directionY * (magnitude * 100 / speed)
+      const force = next.forceValue ?? magnitude
+      ax = next.directionX * (force * 100 / speed)
+      ay = next.directionY * (force * 100 / speed)
     }
     if (next.kind === 'spring') {
       const dx = next.anchorX - next.x, dy = next.anchorY - next.y
@@ -306,6 +524,29 @@ export function stepItem(item, dt, fields = [], spring = null) {
 export function changeArrow(item, directionX, directionY, magnitude) {
   const next = { ...item, directionX, directionY, magnitude }
   const speed = Math.max(Math.hypot(item.vx, item.vy), 100)
+  if (['newton', 'weight', 'electric', 'work', 'power'].includes(item.kind)) {
+    if (item.outputSymbol === 'F' && item.parameters?.F === undefined) {
+      next.outputValue = magnitude
+      next.forceValue = magnitude
+      next.accelerationValue = magnitude / Math.max(item.massValue ?? 1, .01)
+      next.arrowValue = magnitude
+      next.magnitude = magnitude
+      return next
+    }
+    if (item.parameters?.F !== undefined) {
+      const updated = refreshFormula({ ...next, parameters: { ...item.parameters, F: magnitude } })
+      updated.directionX = directionX
+      updated.directionY = directionY
+      if (item.kind === 'work') {
+        updated.travelled = 0
+        updated.vx = 0
+        updated.vy = 0
+      }
+      return updated
+    }
+    next.forceValue = magnitude
+    next.arrowValue = magnitude
+  }
   if (item.kind === 'work') {
     // Re-aiming the work arrow starts a fresh displacement run with the new force.
     next.travelled = 0
