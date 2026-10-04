@@ -517,7 +517,8 @@ export function refreshFormula(item) {
   const forceValue = values.F ?? 0
   const accelerationValue = item.law === 'newton' ? values.a : forceValue / Math.max(mass, .001)
   const fieldForceValue = item.law === 'gravity' ? values.G * values.M * mass / (values.r ** 2)
-    : item.law === 'coulomb' ? values.k * values.Q * values.q / (values.r ** 2) : 0
+    : item.law === 'coulomb' ? values.k * values.Q * values.q / (values.r ** 2)
+      : visual === 'field' ? Math.abs(forceValue) : 0
   return { ...item, visual, inputSymbols, parameters: Object.fromEntries(inputSymbols.map(key => [key, values[key]])),
     values, outputValue: values[item.outputSymbol], massValue: mass, forceValue, accelerationValue,
     speedValue: values.v, fieldForceValue, invalidReason,
@@ -678,7 +679,9 @@ export function fieldAcceleration(item, fields) {
     const r = distance / PIXELS_PER_UNIT
     const p = field.values
     const strength = field.law === 'coulomb' ? -p.k * p.Q * (item.values?.q ?? 1) / (mass * r ** 2)
-      : p.G * p.M / r ** 2
+      : field.law === 'expression' && field.inputSymbols?.includes('q') ? -(field.forceValue ?? p.F ?? 0) / (mass * r ** 2)
+        : field.law === 'expression' && field.inputSymbols?.includes('G') ? p.G * p.M / r ** 2
+          : p.G * p.M / r ** 2
     return { ax: sum.ax + dx / distance * strength * PIXELS_PER_UNIT * (field.fieldScale ?? 1),
       ay: sum.ay + dy / distance * strength * PIXELS_PER_UNIT * (field.fieldScale ?? 1) }
   }, { ax: 0, ay: 0 })
