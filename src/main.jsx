@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Trash } from '@phosphor-icons/react'
 import './styles.css'
-import { clamp, normalize, resolveFormula, refreshFormula, defaultDirection, resetMotion, isField, isDynamic, isDirectional, isSpringSource, stepItem, changeArrow, resolveWorldCollisions } from './physics.js'
+import { clamp, normalize, resolveFormula, refreshFormula, defaultDirection, resetMotion, isField, isMass, isDynamic, isDirectional, isSpringSource, fieldAutoScale, fieldScaleFor, stepItem, changeArrow, resolveWorldCollisions } from './physics.js'
 
 const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'x', 't', 'W', 'P', 'p', 'E', 'e', 'k', 'L', 'd', 'r', 'U', 'R', 'I', 'q', 'B', 'G', 'c', 'f', 'μ', 'ρ', 'ω', 'λ', 'θ', 'Q', 'T', '½', 'h', 'n', 'C', 'S', 'V']
 const FONT = 76
@@ -39,8 +39,10 @@ function fittedMetrics(text) {
 function arrowGeometry(item) {
   const force = Math.hypot(item.ax ?? 0, item.ay ?? 0)
   const fallback = defaultDirection(item.kind)
-  const directionX = isDirectional(item) ? item.directionX : force > 1 ? item.ax / force : fallback.x
-  const directionY = isDirectional(item) ? item.directionY : force > 1 ? item.ay / force : fallback.y
+  const signedValue = item.arrowValue ?? item.outputValue ?? 1
+  const sign = signedValue < 0 ? -1 : 1
+  const directionX = isDirectional(item) ? item.directionX * sign : force > 1 ? item.ax / force : fallback.x
+  const directionY = isDirectional(item) ? item.directionY * sign : force > 1 ? item.ay / force : fallback.y
   const edge = Math.abs(directionX) * item.width / 2 + Math.abs(directionY) * item.height / 2 + 18
   const startX = item.x + directionX * edge
   const startY = item.y + directionY * edge
@@ -57,7 +59,7 @@ function fieldScaleAt(item, x, y) {
 }
 
 function fieldBoundaryDistance(item, x, y) {
-  return Math.abs(fieldScaleAt(item, x, y) - item.fieldScale) * Math.min(item.width * 1.59, item.height * .64)
+  return Math.abs(fieldScaleAt(item, x, y) - fieldScaleFor(item)) * Math.min(item.width * 1.59, item.height * .64)
 }
 
 function distanceToSegment(px, py, x1, y1, x2, y2) {
@@ -250,10 +252,20 @@ function App() {
           const anchor = springAnchorPoint(item, endpoint)
           drawSpring(context, anchor.x, anchor.y, endpoint.x, endpoint.y)
         }
-        if (item.outputSymbol && Number.isFinite(item.outputValue) && !['letter', 'invalid'].includes(item.kind)) {
+        if (item.inputSymbols?.length && item.parameters && !['letter', 'invalid'].includes(item.kind)) {
           context.fillStyle = 'rgba(69, 65, 59, .58)'
           context.font = 'italic 14px Times New Roman'
-          context.fillText(`${item.outputSymbol} = ${formatValue(item.outputValue)}`, item.x - item.width / 2, item.y + item.height / 2 + 16)
+          const output = item.outputSymbol && Number.isFinite(item.outputValue)
+            ? `${item.outputSymbol} = ${formatValue(item.outputValue)}`
+            : ''
+          const inputs = item.inputSymbols.map((symbol) => `${symbol} = ${formatValue(item.parameters[symbol])}${symbol === 'm' ? ' kg' : ''}`)
+          if (isSpringSource(item) && !item.inputSymbols.includes('m')) inputs.push(`m = ${formatValue(item.massValue ?? 1)} kg`)
+          context.fillText([output, ...inputs].filter(Boolean).join('   '), item.x - item.width / 2, item.y + item.height / 2 + 16)
+        }
+        if (isMass(item)) {
+          context.fillStyle = 'rgba(69, 65, 59, .58)'
+          context.font = 'italic 14px Times New Roman'
+          context.fillText('m = 1.00 kg', item.x - item.width / 2, item.y + item.height / 2 + 16)
         }
         if (['letter', 'law', 'invalid', 'springEnergy'].includes(item.kind)) return
         item.trail.forEach((point, index) => {
@@ -264,7 +276,7 @@ function App() {
           context.fill()
         })
         if (isField(item)) {
-          const fieldScale = item.fieldScale ?? 1
+          const fieldScale = fieldScaleFor(item)
           for (let ring = 0; ring < 3; ring += 1) {
             context.strokeStyle = `rgba(87, 80, 70, ${.16 - ring * .035})`
             context.lineWidth = 1
@@ -295,9 +307,13 @@ function App() {
         context.lineWidth = 1.1
         context.beginPath(); context.moveTo(startX, startY); context.lineTo(endX, endY); context.stroke()
         context.beginPath(); context.moveTo(endX, endY); context.lineTo(endX - directionX * 11 - directionY * 5, endY - directionY * 11 + directionX * 5); context.lineTo(endX - directionX * 11 + directionY * 5, endY - directionY * 11 - directionX * 5); context.closePath(); context.fill()
-        context.font = 'italic 19px Times New Roman'
         const label = { newton: 'a', momentum: 'p', kineticEnergy: 'E', wave: 'v' }[item.kind] ?? 'F'
-        context.fillText(label, endX + directionX * 7 - 6, endY + directionY * 7 - 9)
+        const arrowValue = item.kind === 'newton' ? item.accelerationValue : item.arrowValue ?? item.outputValue
+        const arrowText = `${label} = ${formatValue(arrowValue)}`
+        context.font = 'italic 15px Times New Roman'
+        const arrowTextWidth = context.measureText(arrowText).width
+        const labelX = endX + directionX * 9 - (directionX < 0 ? arrowTextWidth : 0)
+        context.fillText(arrowText, labelX, endY + directionY * 9 - 8)
         const speed = Math.hypot(item.vx, item.vy)
         context.font = 'italic 14px Times New Roman'
         const measure = item.kind === 'work' ? `d = ${(item.travelled / 100).toFixed(2)}` : `v = ${(speed / 100).toFixed(2)}`
@@ -323,7 +339,7 @@ function App() {
       setItems((current) => current.map((item) => {
         if (item.id !== active.id) return item
         const scale = Math.max(Math.abs(active.startValue) * .012, .03)
-        const minimum = ['m', 'r', 'k', 'c', 'v', 'f', 'λ', 'E', 'I', 'R'].includes(active.symbol) ? .01 : -1000
+        const minimum = ['m', 'r', 'k', 'c', 'f', 'λ', 'E', 'R'].includes(active.symbol) ? .01 : -1000
         const maximum = 1000
         const value = clamp(active.startValue + (active.startY - event.clientY) * scale, minimum, maximum)
         const updated = refreshFormula({ ...item, parameters: { ...item.parameters, [active.symbol]: value } })
@@ -353,7 +369,7 @@ function App() {
     if (active.type === 'field') {
       setItems((current) => current.map((item) => {
         if (item.id !== active.id) return item
-        return { ...item, fieldScale: clamp(fieldScaleAt(item, event.clientX, event.clientY), MIN_FIELD_SCALE, MAX_FIELD_SCALE) }
+        return { ...item, fieldScale: clamp(fieldScaleAt(item, event.clientX, event.clientY) / Math.max(fieldAutoScale(item), .01), MIN_FIELD_SCALE, MAX_FIELD_SCALE) }
       }))
       return
     }
