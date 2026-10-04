@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Trash } from '@phosphor-icons/react'
 import './styles.css'
-import { clamp, normalize, resolveFormula, refreshFormula, defaultDirection, resetMotion, isField, isMass, isDynamic, isDirectional, isSpringSource, fieldAutoScale, fieldScaleFor, stepItem, changeArrow, changeParameter, parameterMinimum, readoutsFor, resolveWorldCollisions } from './physics.js'
+import { clamp, normalize, resolveFormula, resolveEnteredFormula, refreshFormula, defaultDirection, resetMotion, isField, isMass, isDynamic, isDirectional, isSpringSource, fieldAutoScale, fieldScaleFor, stepItem, changeArrow, changeParameter, parameterMinimum, readoutsFor, resolveWorldCollisions, arrowSymbolFor, arrowValueFor, vectorFor, unitFor, isPendulumSource } from './physics.js'
 
 const SYMBOLS = ['m', 'M', 'g', 'a', 'F', 'v', 'u', 'x', 's', 't', 'W', 'P', 'p', 'J', 'E', 'K', 'e', 'k', 'L', 'd', 'r', 'U', 'R', 'I', 'q', 'B', 'G', 'c', 'f', 'μ', 'ρ', 'ω', 'λ', 'θ', 'τ', 'α', 'Q', 'T', '½', 'h', 'n', 'A', 'V', 'π', 'η', 'C', 'S']
 const FONT = 76
@@ -39,17 +39,14 @@ function fittedMetrics(text) {
 }
 
 function arrowGeometry(item) {
-  const force = Math.hypot(item.ax ?? 0, item.ay ?? 0)
-  const fallback = defaultDirection(item.kind)
-  const signedValue = item.arrowValue ?? item.outputValue ?? 1
-  const sign = signedValue < 0 ? -1 : 1
-  const directionX = isDirectional(item) ? item.directionX * sign : force > 1 ? item.ax / force : fallback.x
-  const directionY = isDirectional(item) ? item.directionY * sign : force > 1 ? item.ay / force : fallback.y
+  const vector = vectorFor(item)
+  const directionX = vector.x
+  const directionY = vector.y
   const edge = Math.abs(directionX) * item.width / 2 + Math.abs(directionY) * item.height / 2 + 18
   const startX = item.x + directionX * edge
   const startY = item.y + directionY * edge
   return { directionX, directionY, edge, startX, startY,
-    endX: startX + directionX * item.magnitude, endY: startY + directionY * item.magnitude }
+    endX: startX + directionX * vector.length, endY: startY + directionY * vector.length, value: vector.value }
 }
 
 function fieldScaleAt(item, x, y) {
@@ -123,7 +120,7 @@ function drawPhysicalVisual(context, item) {
       context.beginPath(); context.moveTo(x, y); context.lineTo(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius); context.stroke()
     }
     context.beginPath(); context.arc(x, y, 4, 0, Math.PI * 2); context.fill()
-  } else if (item.visual === 'wave' || item.visual === 'light') {
+  } else if (['wave', 'light', 'oscillator'].includes(item.visual)) {
     const phase = item.wavePhase ?? 0
     const length = Math.max(80, w * 2.1)
     context.beginPath()
@@ -222,6 +219,19 @@ function attachToSpring(items, id) {
   })
 }
 
+function attachToEquationGroup(items, id) {
+  const body = items.find((item) => item.id === id)
+  if (!body || body.kind !== 'letter' || !['m', 'q'].includes(normalize(body.text))) return null
+  const target = items
+    .filter((item) => item.id !== id && item.law && !item.invalidReason && (item.inputSymbols ?? []).includes(normalize(body.text)))
+    .sort((a, b) => Math.hypot(a.x - body.x, a.y - body.y) - Math.hypot(b.x - body.x, b.y - body.y))[0]
+  if (!target || Math.hypot(target.x - body.x, target.y - body.y) > 250) return null
+  const interactionGroup = target.interactionGroup ?? `interaction-${target.id}-${body.id}`
+  return items.map((item) => item.id === body.id || item.id === target.id || item.interactionGroup === interactionGroup
+    ? { ...item, interactionGroup, interactionBody: true, held: false }
+    : item)
+}
+
 function MathText({ text, formula, onVariablePointerDown }) {
   const inputs = new Set(formula?.inputSymbols ?? [])
   const parts = []
@@ -259,6 +269,8 @@ function Fraction({ formula, numerator, denominator, onVariablePointerDown }) {
 
 function App() {
   const [items, setItems] = useState([])
+  const [formulaInputOpen, setFormulaInputOpen] = useState(false)
+  const [formulaInput, setFormulaInput] = useState('')
   const canvas = useRef(null)
   const palette = useRef(null)
   const trash = useRef(null)
@@ -269,7 +281,7 @@ function App() {
 
   const add = (text, x, y) => {
     const id = nextId.current++
-    const formula = resolveFormula(text)
+    const formula = resolveEnteredFormula(text)
     const item = refreshFormula({ id, parts: text, ...formula, x, y, held: false, magnitude: 100, ...fittedMetrics(formula.text) })
     Object.assign(item, resetMotion(item, { width: window.innerWidth, height: window.innerHeight }))
     setItems((current) => [...current, item])
@@ -369,7 +381,7 @@ function App() {
         if (item.inputSymbols?.length && item.parameters && !['letter', 'invalid'].includes(item.kind)) {
           context.fillStyle = 'rgba(69, 65, 59, .58)'
           context.font = 'italic 14px Times New Roman'
-          const values = readoutsFor(item).map(({ symbol, value }) => `${symbol} = ${formatValue(value)}${symbol === 'm' ? ' kg' : ''}`)
+          const values = readoutsFor(item).map(({ symbol, value, unit }) => `${symbol} = ${formatValue(value)}${unit ? ` ${unit}` : ''}`)
           if (isSpringSource(item) && !item.inputSymbols.includes('m')) values.push(`m = ${formatValue(item.massValue ?? 1)} kg`)
           context.fillText(values.join('   '), item.x - item.width / 2, item.y + item.height / 2 + 16)
         }
@@ -420,16 +432,17 @@ function App() {
         context.lineWidth = 1.1
         context.beginPath(); context.moveTo(startX, startY); context.lineTo(endX, endY); context.stroke()
         context.beginPath(); context.moveTo(endX, endY); context.lineTo(endX - directionX * 11 - directionY * 5, endY - directionY * 11 + directionX * 5); context.lineTo(endX - directionX * 11 + directionY * 5, endY - directionY * 11 - directionX * 5); context.closePath(); context.fill()
-        const label = { newton: 'a', momentum: 'p', kineticEnergy: 'E', wave: 'v', kinematics: item.outputSymbol ?? 'v', impulse: 'J', torque: 'τ' }[item.kind] ?? 'F'
-        const arrowValue = item.kind === 'newton' ? (item.liveValues?.a ?? item.accelerationValue) : item.liveValues?.[item.outputSymbol] ?? item.arrowValue ?? item.outputValue
-        const arrowText = `${label} = ${formatValue(arrowValue)}`
+        const label = arrowSymbolFor(item)
+        const arrowValue = arrowValueFor(item)
+        const arrowUnit = unitFor(label, item.law === 'expression' ? item.unitContext : item.law)
+        const arrowText = `${label} = ${formatValue(arrowValue)}${arrowUnit ? ` ${arrowUnit}` : ''}`
         context.font = 'italic 15px Times New Roman'
         const arrowTextWidth = context.measureText(arrowText).width
         const labelX = endX + directionX * 9 - (directionX < 0 ? arrowTextWidth : 0)
         context.fillText(arrowText, labelX, endY + directionY * 9 - 8)
         const speed = Math.hypot(item.vx, item.vy)
         context.font = 'italic 14px Times New Roman'
-        const measure = item.kind === 'work' ? `d = ${(item.travelled / 12).toFixed(2)}` : `v = ${(speed / 12).toFixed(2)}`
+        const measure = item.kind === 'work' ? `d = ${(item.travelled / 12).toFixed(2)} m` : `v = ${(speed / 12).toFixed(2)} m/s`
         context.fillText(measure, item.x - item.width / 2, item.y + item.height / 2 + 32)
         if (item.collisionFlash > 0) {
           context.strokeStyle = `rgba(69, 65, 59, ${item.collisionFlash * 2.4})`
@@ -491,7 +504,7 @@ function App() {
       remove(active.id)
       return
     }
-    setItems((current) => attachToSpring(current, active.id) ?? mergeNear(current, active.id))
+    setItems((current) => attachToSpring(current, active.id) ?? attachToEquationGroup(current, active.id) ?? mergeNear(current, active.id))
   }
 
   const start = (event, text, id = null) => {
@@ -537,11 +550,30 @@ function App() {
     if (event.detail === 0) add(symbol, window.innerWidth * .42, 100)
   }
 
+  const submitFormula = (event) => {
+    event.preventDefault()
+    const text = formulaInput.trim()
+    if (!text) return
+    add(text, window.innerWidth * .42, Math.max(110, window.innerHeight * .25))
+    setFormulaInput('')
+    setFormulaInputOpen(false)
+  }
+
   return <main className="sandbox" onPointerDown={beginCanvas} onPointerMove={move} onPointerUp={release} onPointerCancel={(event) => release(event, true)}>
     <canvas ref={canvas} className="effects" aria-hidden="true" />
     <div className="floor" aria-hidden="true" />
     {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' || item.invalidReason ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize, transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}rad)` }} data-equation={item.text} data-kind={item.kind} data-visual={item.visual} data-invalid-reason={item.invalidReason} data-output={item.outputSymbol} data-output-value={item.outputValue} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-interaction-group={item.interactionGroup} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item, (event, symbol) => beginParameter(event, item.id, symbol))}</span></div>)}
-    <aside className="palette" ref={palette}>{SYMBOLS.map((symbol) => <button key={symbol} type="button" className="symbol" onPointerDown={(event) => start(event, symbol)} onClick={(event) => clickPalette(event, symbol)}>{symbol}</button>)}</aside>
+    <aside className="palette" ref={palette}>
+      {SYMBOLS.map((symbol) => <button key={symbol} type="button" className="symbol" onPointerDown={(event) => start(event, symbol)} onClick={(event) => clickPalette(event, symbol)}>{symbol}</button>)}
+      <button type="button" className="formula-input-trigger" aria-label="输入公式" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation() }} onClick={() => setFormulaInputOpen(true)}>+</button>
+    </aside>
+    {formulaInputOpen && <div className="formula-input" role="dialog" aria-label="输入公式" onPointerDown={(event) => event.stopPropagation()}>
+      <form onSubmit={submitFormula}>
+        <input autoFocus value={formulaInput} onChange={(event) => setFormulaInput(event.target.value)} placeholder="例如 F=−kx−cv 或 x=A sin(ωt)" aria-label="公式" />
+        <button type="submit">添加</button>
+        <button type="button" onClick={() => { setFormulaInput(''); setFormulaInputOpen(false) }}>取消</button>
+      </form>
+    </div>}
     <button className="trash" ref={trash} type="button" aria-label="删除符号" onClick={() => setItems([])}><Trash size={40} weight="light" /></button>
   </main>
 }
