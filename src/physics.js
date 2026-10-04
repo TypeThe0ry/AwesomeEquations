@@ -1,3 +1,4 @@
+import { parseExpression, evaluateExpression, expressionSymbols, validateExpressionUnits } from './expressions.js'
 // Screen-space units keep the sandbox legible; the force laws still determine motion.
 export const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
 export const normalize = (text) => text.replaceAll('−', '-').replace(/\s/g, '').replaceAll('^2', '²').replaceAll('^3', '³').replaceAll('1/2', '½')
@@ -22,6 +23,7 @@ export const EQUATIONS = [
   { id: 'centripetal', text: 'F=mv²/r', recipe: 'Fmvr', kind: 'centripetal', recipes: ['Fmvvr'] },
   { id: 'angularCentripetal', text: 'F=mω²r', recipe: 'Fmωr', kind: 'centripetal', recipes: ['Fmωωr'] },
   { id: 'pendulum', text: 'F=−mgθ', recipe: 'Fmgθ', kind: 'pendulum' },
+  { id: 'nonlinearPendulum', text: 'F=−mg sin(θ)', recipe: 'Fmg sin(θ)', kind: 'pendulum' },
   { id: 'nonlinearSpring', text: 'F=−kx³', recipe: 'Fkxxx', kind: 'spring' },
   { id: 'momentum', text: 'p=mv', recipe: 'pmv', kind: 'momentum' },
   { id: 'kineticEnergy', text: 'E=½mv²', recipe: 'E½mv', kind: 'kineticEnergy', recipes: ['E½mvv'] },
@@ -172,6 +174,10 @@ const MODELS = {
     defaults: { F: -45, m: 1, g: 100, θ: .45 },
     rules: { F: p => -p.m * p.g * p.θ },
   },
+  nonlinearPendulum: {
+    outputs: { F: ['m', 'g', 'θ'] }, formats: { F: 'F=−mg sin(θ)' },
+    defaults: { m: 1, g: 9.81, θ: .7 }, rules: { F: p => -p.m * p.g * Math.sin(p.θ) },
+  },
   nonlinearSpring: {
     outputs: { F: ['k', 'x'] },
     formats: { F: 'F=−kx³' },
@@ -186,7 +192,7 @@ const MODELS = {
   },
   kineticEnergy: {
     outputs: { E: ['m', 'v'], m: ['E', 'v'], v: ['E', 'm'] },
-    formats: { E: 'E=½mv²', m: 'm=2E/v²' },
+    formats: { E: 'E=½mv²', m: 'm=2E/v²', v: 'v=√(2E/m)' },
     defaults: { E: 100, m: 1, v: 10 },
     rules: { E: p => .5 * p.m * p.v ** 2, m: p => 2 * p.E / safeDenom(p.v ** 2), v: p => Math.sqrt(Math.max(0, 2 * p.E / safeDenom(p.m))) },
   },
@@ -360,6 +366,12 @@ export const PIXELS_PER_UNIT = 12
 const TAU = 2 * Math.PI
 const safeDenom = value => Math.abs(value) < 1e-10 ? NaN : value
 const modelFor = law => MODELS[law]
+const EXPRESSION_DEFAULTS = { F: 4, m: 1, M: 20, a: 4, g: 9.81, v: 6, u: 0, x: 1, e: 1, s: 1, d: 1, r: 4, h: 4, L: 4, t: 1, T: 2, k: 4, c: .5, I: 2, R: 3, V: 6, P: 12, E: 4, Q: 1, q: 1, G: 20, B: .5, μ: .3, ρ: 1, A: 2, η: .5, f: .8, λ: 8, θ: .4, τ: 4, α: .5, ω: 1, p: 6, U: 10, K: 4, J: 4 }
+const formulaModel = item => item.expression ? {
+  defaults: EXPRESSION_DEFAULTS, outputs: { [item.outputSymbol]: item.inputSymbols ?? [] },
+  rules: { [item.outputSymbol]: values => evaluateExpression(item.expression, values) }
+} : modelFor(item.law)
+const visualFor = item => item.visual ?? VISUALS[item.law]
 
 const DEFAULTS = {
   newton: { m: 1, a: 4, F: 4 }, weight: { m: 1, g: 9.81, F: 9.81 },
@@ -396,7 +408,7 @@ export const VISUALS = {
   velocityTime: 'acceleration', displacementTime: 'translation', acceleratedDisplacement: 'acceleration', escapeSpeed: 'fall',
   impulse: 'impulse', spring: 'spring', dampedSpring: 'spring', nonlinearSpring: 'spring', springEnergy: 'spring',
   electric: 'force', friction: 'resistance', drag: 'resistance', quadraticDrag: 'resistance', viscous: 'shear',
-  magnetic: 'magnetic', centripetal: 'orbit', angularCentripetal: 'orbit', pendulum: 'pendulum',
+  magnetic: 'magnetic', centripetal: 'orbit', angularCentripetal: 'orbit', pendulum: 'pendulum', nonlinearPendulum: 'pendulum',
   momentum: 'translation', kineticEnergy: 'translation', potentialEnergy: 'energyFall', gravityPotential: 'gravityOrbit',
   angularMomentum: 'orbit', torqueForce: 'rotor', torqueAngular: 'rotor', angularAcceleration: 'rotor',
   momentInertia: 'rotor', angularVelocity: 'orbit', rotationalEnergy: 'rotor', rotationalPower: 'rotor',
@@ -433,6 +445,45 @@ export function resolveFormula(raw) {
     inputSymbols: MODELS[law.id].outputs[output], visual: VISUALS[law.id] }
 }
 
+// Typed equations use real arithmetic syntax. Symbol dragging keeps its recipe
+// inference; entered equations also accept numeric assignments and expressions.
+export function resolveEnteredFormula(raw) {
+  const text = String(raw).trim()
+  if (!text) return { text, kind: 'invalid', law: null, invalidReason: '请输入公式' }
+  if (text === 'm' || text === 'q') return resolveFormula(text)
+  const compact = text.replace(/\s/g, '').replaceAll('*', '').replaceAll('×', '').replaceAll('·', '')
+  const known = resolveFormula(compact)
+  // Recipe inference is useful for palette composition ("Fma"), but typed
+  // equations must preserve their sign and operators exactly.
+  if (known.law && known.text && (!compact.includes('=') || normalize(known.text) === normalize(compact))) return known
+  const halves = text.split('=')
+  if (halves.length !== 2 || !/^[A-Za-zα-ωΑ-Ω]$/u.test(halves[0].trim())) return { text, kind: 'invalid', law: null, invalidReason: '使用 “F=−kx−cv” 或 “m=2” 这样的格式' }
+  const outputSymbol = halves[0].trim()
+  try {
+    const expression = parseExpression(halves[1])
+    const inputSymbols = expressionSymbols(expression)
+    if (!(outputSymbol in EXPRESSION_DEFAULTS) || inputSymbols.some(symbol => !(symbol in EXPRESSION_DEFAULTS))) throw new Error('存在未支持的物理量')
+    if (inputSymbols.includes(outputSymbol)) throw new Error('输出量不能出现在自身的右侧')
+    const unitContext = outputSymbol === 'x' && (inputSymbols.includes('A') || inputSymbols.includes('ω')) ? 'oscillator'
+      : outputSymbol === 'E' && inputSymbols.includes('k') && inputSymbols.includes('e') ? 'springEnergy'
+        : inputSymbols.includes('R') || (inputSymbols.includes('I') && inputSymbols.includes('V')) ? 'ohm'
+      : inputSymbols.includes('q') || inputSymbols.includes('Q') ? (inputSymbols.includes('E') ? 'electric' : 'coulomb')
+        : outputSymbol === 'τ' || outputSymbol === 'α' || outputSymbol === 'I' ? 'torqueAngular' : 'expression'
+    const visual = inputSymbols.length === 0 ? 'quantity'
+      : outputSymbol === 'F' ? (inputSymbols.includes('G') && inputSymbols.includes('M') && inputSymbols.includes('r') ? 'field'
+        : inputSymbols.includes('k') && inputSymbols.includes('Q') && inputSymbols.includes('q') ? 'field'
+          : inputSymbols.includes('θ') && inputSymbols.includes('m') && inputSymbols.includes('g') ? 'pendulum'
+            : inputSymbols.includes('k') && inputSymbols.includes('x') ? 'spring' : 'force')
+        : outputSymbol === 'a' ? 'acceleration' : unitContext === 'springEnergy' ? 'spring'
+          : ['v', 'p', 'E'].includes(outputSymbol) ? 'translation'
+            : outputSymbol === 'x' && (inputSymbols.includes('A') || inputSymbols.includes('ω')) ? 'oscillator'
+            : ['τ', 'α', 'ω', 'I', 'K'].includes(outputSymbol) ? 'rotor'
+              : unitContext === 'ohm' ? 'circuit' : unitContext === 'springEnergy' ? 'spring' : 'quantity'
+    return { text: text.replaceAll('-', '−'), kind: 'expression', law: 'expression', outputSymbol, inputSymbols, expression, visual, unitContext,
+      expressionError: validateExpressionUnits(expression, unitFor(outputSymbol, unitContext), symbol => unitFor(symbol, unitContext)) }
+  } catch (error) { return { text, kind: 'invalid', law: null, invalidReason: error.message } }
+}
+
 export function parameterMinimum(item, symbol) {
   if (symbol === 'π') return Math.PI
   // E is a signed electric field in F=qE; I is signed current in electrical laws.
@@ -447,18 +498,20 @@ export const arrowLength = value => clamp(26 + 32 * Math.log1p(Math.abs(value)),
 export const arrowValueFromLength = length => Math.expm1(Math.max(0, length - 26) / 32)
 
 export function refreshFormula(item) {
-  const model = modelFor(item.law)
+  const model = formulaModel(item)
   if (!model) return { ...item, massValue: item.massValue ?? 1 }
   const inputSymbols = model.outputs[item.outputSymbol] ?? []
   const values = { ...model.defaults }
   for (const symbol of inputSymbols) values[symbol] = item.parameters?.[symbol] ?? values[symbol]
+  Object.assign(values, item.linkedParameters ?? {})
   values[item.outputSymbol] = model.rules[item.outputSymbol](values)
-  let invalidReason = !Number.isFinite(values[item.outputSymbol]) ? '无实数解或除数为零' : ''
-  for (const [symbol, value] of Object.entries(values)) {
+  let invalidReason = item.expressionError || (!Number.isFinite(values[item.outputSymbol]) ? '无实数解或除数为零' : '')
+  for (const symbol of new Set([...inputSymbols, item.outputSymbol])) {
+    const value = values[symbol]
     if (parameterMinimum(item, symbol) > 0 && value < 0) invalidReason = `${symbol} 不能为负数`
   }
   const mass = values.m ?? item.massValue ?? 1
-  const visual = VISUALS[item.law]
+  const visual = visualFor(item)
   const forceValue = values.F ?? 0
   const accelerationValue = item.law === 'newton' ? values.a : forceValue / Math.max(mass, .001)
   const fieldForceValue = item.law === 'gravity' ? values.G * values.M * mass / (values.r ** 2)
@@ -468,25 +521,104 @@ export function refreshFormula(item) {
     speedValue: values.v, fieldForceValue, invalidReason,
     arrowValue: item.law === 'newton' ? values.a : values[item.outputSymbol], magnitude: arrowLength(item.law === 'newton' ? values.a : values[item.outputSymbol]) }
 }
-export const isField = item => VISUALS[item.law] === 'field'
+export const isField = item => visualFor(item) === 'field'
 export const isMass = item => item.kind === 'letter' && item.text === 'm'
 export const isCharged = item => (item.kind === 'letter' && item.text === 'q') || (item.law && !!item.values?.q)
-export const isSpringSource = item => VISUALS[item.law] === 'spring'
-export const isDynamic = item => !!item.law && !item.invalidReason && !['field', 'area', 'volume', 'circuit', 'thermal', 'hydrostatic'].includes(VISUALS[item.law])
-export const isDirectional = item => ['force', 'fall', 'acceleration', 'translation', 'impulse', 'work', 'power', 'resistance', 'shear', 'wave', 'light', 'piston'].includes(VISUALS[item.law])
+export const isSpringSource = item => visualFor(item) === 'spring'
+export const isPendulumSource = item => visualFor(item) === 'pendulum'
+export const isDynamic = item => (isMass(item) || isCharged(item) || !!item.law) && !item.invalidReason && !['field', 'area', 'volume', 'circuit', 'thermal', 'hydrostatic', 'quantity'].includes(visualFor(item))
+export const hasArrow = item => !!item.law && !item.invalidReason && item.kind !== 'invalid'
+export const isDirectional = item => hasArrow(item)
 export const isCollidable = item => !item.held && !item.invalidReason && !item.attachedTo &&
-  (isMass(item) || ['force', 'fall', 'energyFall', 'acceleration', 'translation', 'impulse', 'work', 'power', 'resistance', 'shear', 'magnetic', 'wave', 'light', 'momentum', 'kineticEnergy'].includes(VISUALS[item.law] ?? item.kind))
+  (isMass(item) || ['force', 'fall', 'energyFall', 'acceleration', 'translation', 'impulse', 'work', 'power', 'resistance', 'shear', 'magnetic', 'wave', 'light', 'piston', 'fluid', 'momentum', 'kineticEnergy'].includes(visualFor(item) ?? item.kind))
 export const fieldAutoScale = item => Math.min(3, Math.sqrt(Math.abs(item.fieldForceValue ?? 1) / 4))
 export const fieldScaleFor = item => (item.fieldScale ?? 1) * fieldAutoScale(item)
 export const collisionRadius = item => clamp(Math.max((item.width ?? 76) * .24, (item.height ?? 76) * .42), 22, 72)
 
+// Unit labels stay attached to the symbol rather than to a particular visual.
+// A few symbols change meaning between domains, so those cases are resolved by
+// the law below. The sandbox values are SI-like even where constants are scaled
+// for a readable screen simulation.
+export function unitFor(symbol, law) {
+  const units = {
+    F: 'N', a: 'm/s²', g: 'm/s²', v: 'm/s', u: 'm/s', x: 'm', s: 'm', t: 's',
+    W: 'J', P: 'W', p: 'kg·m/s', J: 'N·s', E: 'J', K: 'J', e: 'm', L: 'kg·m²/s',
+    d: 'm', r: 'm', U: 'J', R: 'Ω', I: 'A', q: 'C', Q: 'C', B: 'T',
+    G: 'N·m²/kg²', c: 'N·s/m', f: 'Hz', μ: '', ρ: 'kg/m³', ω: 'rad/s', λ: 'm',
+    θ: 'rad', τ: 'N·m', α: 'rad/s²', h: 'm', A: 'm²', V: 'm³', η: 'Pa·s',
+    m: 'kg', M: 'kg', T: 's', k: 'N/m', π: '', C: 'J/(kg·K)', S: 'm²', n: ''
+  }
+  if (symbol === 'V' && ['ohm', 'electricPower'].includes(law)) return 'V'
+  if (symbol === 'I' && ['momentInertia', 'torqueAngular', 'angularAcceleration', 'rotationalEnergy'].includes(law)) return 'kg·m²'
+  if (symbol === 'E' && law === 'electric') return 'N/C'
+  if (symbol === 'E' && law === 'photon') return 'J'
+  if (symbol === 'E' && law === 'springEnergy') return 'J'
+  if (symbol === 'P' && law === 'pressure') return 'Pa'
+  if (symbol === 'P' && law === 'fluidPressure') return 'Pa'
+  if (symbol === 'Q' && law === 'heat') return 'J'
+  if (symbol === 'Q' && law === 'coulomb') return 'C'
+  if (symbol === 'h' && law === 'photon') return 'J·s'
+  if (symbol === 'c' && law === 'heat') return 'J/(kg·K)'
+  if (symbol === 'k' && ['coulomb'].includes(law)) return 'N·m²/C²'
+  if (symbol === 'T' && ['heat'].includes(law)) return 'K'
+  if (symbol === 'T' && ['springPeriod', 'pendulumPeriod'].includes(law)) return 's'
+  if (symbol === 'V' && ['density', 'volume'].includes(law)) return 'm³'
+  if (symbol === 'A' && ['pressure', 'circleArea', 'viscous'].includes(law)) return 'm²'
+  if (symbol === 'A' && law === 'oscillator') return 'm'
+  return units[symbol] ?? ''
+}
+
 export function defaultDirection(kind) {
   return kind === 'weight' ? { x: 0, y: 1 } : kind === 'newton' ? { x: -1, y: 0 } : { x: 1, y: 0 }
 }
+
+// The arrow is a live vector.  Its orientation comes from the current
+// velocity for kinematic relations and from the current acceleration for
+// force relations.  During a collision the velocity wins briefly, so the
+// visible vector turns with the rebound instead of remaining on its old axis.
+export function arrowSymbolFor(item) {
+  const visual = visualFor(item)
+  if (item.law === 'newton' || visual === 'acceleration') return 'a'
+  if (item.law === 'momentum') return 'p'
+  if (item.law === 'kineticEnergy') return 'E'
+  if (visual === 'translation' || visual === 'wave' || visual === 'light') return item.outputSymbol ?? 'v'
+  if (visual === 'rotor') return item.outputSymbol === 'α' ? 'α' : item.outputSymbol === 'ω' ? 'ω' : 'τ'
+  if (item.law === 'impulse') return 'J'
+  return item.outputSymbol ?? 'F'
+}
+
+export function arrowValueFor(item) {
+  const live = { ...(item.values ?? {}), ...(item.liveValues ?? {}) }
+  const symbol = arrowSymbolFor(item)
+  if (item.law === 'newton' || visualFor(item) === 'acceleration') return live.a ?? item.accelerationValue ?? item.outputValue
+  if (item.law === 'kineticEnergy') return live.E ?? item.outputValue
+  return live[symbol] ?? live.F ?? item.arrowValue ?? item.outputValue
+}
+
+export function vectorFor(item) {
+  const visual = visualFor(item)
+  const velocityVector = ['translation', 'wave', 'light', 'oscillator', 'momentum', 'kineticEnergy'].includes(visual) || ['momentum', 'kineticEnergy'].includes(item.law)
+  const collisionVector = (item.collisionFlash ?? 0) > 0 && Math.hypot(item.vx ?? 0, item.vy ?? 0) > 1
+  const useVelocity = velocityVector || collisionVector
+  let vx = useVelocity ? (item.vx ?? 0) : (item.ax ?? 0)
+  let vy = useVelocity ? (item.vy ?? 0) : (item.ay ?? 0)
+  let length = Math.hypot(vx, vy)
+  if (length > 1e-8) {
+    // Screen acceleration/velocity is scaled by PIXELS_PER_UNIT. The arrow
+    // length is still derived from the displayed SI-like value.
+    const raw = Math.abs(arrowValueFor(item) ?? (useVelocity ? length / PIXELS_PER_UNIT : length / PIXELS_PER_UNIT))
+    return { x: vx / length, y: vy / length, length: arrowLength(raw), value: arrowValueFor(item) }
+  }
+  const fallback = { x: item.directionX ?? defaultDirection(item.kind).x, y: item.directionY ?? defaultDirection(item.kind).y }
+  const signed = Number(arrowValueFor(item) ?? 1)
+  const sign = signed < 0 ? -1 : 1
+  return { x: fallback.x * sign, y: fallback.y * sign, length: arrowLength(signed), value: signed }
+}
+
 export function resetMotion(raw, viewport = { width: 1200, height: 800 }) {
   const item = refreshFormula(raw)
   const p = item.values ?? {}
-  const visual = VISUALS[item.law]
+  const visual = visualFor(item)
   const direction = ['fall', 'energyFall'].includes(visual) ? { x: 0, y: 1 } : defaultDirection(item.kind)
   const radius = clamp(Math.abs(p.r ?? p.L ?? 10) * PIXELS_PER_UNIT, 40, Math.min(viewport.width, viewport.height) * .28)
   const motion = { vx: 0, vy: 0, ax: 0, ay: 0, age: 0, trail: [], travelled: 0,
@@ -502,6 +634,7 @@ export function resetMotion(raw, viewport = { width: 1200, height: 800 }) {
   if (visual === 'resistance' || visual === 'shear' || visual === 'magnetic') v = p.v ?? 8
   if (visual === 'acceleration') v = p.u ?? 0
   if (visual === 'power') v = p.v ?? 1
+  if (visual === 'oscillator') v = 0
   motion.vx = direction.x * v * PIXELS_PER_UNIT
   motion.vy = direction.y * v * PIXELS_PER_UNIT
   if (['orbit', 'gravityOrbit'].includes(visual)) {
@@ -522,6 +655,12 @@ export function resetMotion(raw, viewport = { width: 1200, height: 800 }) {
     motion.theta = p.θ ?? .4
     motion.anchorX = item.x - Math.sin(motion.theta) * radius
     motion.anchorY = item.y - Math.cos(motion.theta) * radius
+  }
+  if (visual === 'oscillator') {
+    motion.oscillatorAmplitude = Math.abs(p.A ?? p.x ?? 2)
+    motion.oscillatorFrequency = Math.abs(p.ω ?? p.f ?? 1)
+    motion.originX = item.x
+    motion.originY = item.y
   }
   return motion
 }
@@ -554,14 +693,14 @@ export function springAcceleration(item, raw) {
 
 // Only force-producing laws contribute a force. Momentum, energy and Newton's
 // constitutive relation are never converted blindly into additional forces.
-const forceLaws = new Set(['newton', 'weight', 'electric', 'friction', 'drag', 'quadraticDrag', 'viscous', 'pressure', 'fluidPressure', 'buoyancy', 'spring', 'dampedSpring', 'nonlinearSpring', 'springEnergy'])
+const forceLaws = new Set(['newton', 'weight', 'electric', 'friction', 'drag', 'quadraticDrag', 'viscous', 'pressure', 'fluidPressure', 'buoyancy', 'spring', 'dampedSpring', 'nonlinearSpring', 'nonlinearPendulum', 'springEnergy', 'expression'])
 export function interactionAcceleration(item, peers = []) {
   if (!item.interactionGroup) return { ax: 0, ay: 0 }
   const target = item.values ? item : refreshFormula(item)
   const constitutiveOnly = peers.some(peer => peer.law !== 'newton' && forceLaws.has(peer.law))
   return peers.reduce((sum, rawPeer) => {
     const peer = rawPeer.values ? rawPeer : { ...refreshFormula(rawPeer), ...rawPeer }
-    if (peer.id === item.id || peer.interactionGroup !== item.interactionGroup || peer.invalidReason || !forceLaws.has(peer.law)) return sum
+    if (peer.id === item.id || peer.interactionGroup !== item.interactionGroup || peer.invalidReason || !forceLaws.has(peer.law) || (peer.law === 'expression' && peer.outputSymbol !== 'F')) return sum
     if (peer.law === 'newton' && constitutiveOnly) return sum
     if (isSpringSource(peer)) {
       const result = springAcceleration({ ...item, springRestLength: item.springRestLength ?? 80 }, peer)
@@ -585,7 +724,7 @@ export function interactionAcceleration(item, peers = []) {
 export function stepItem(raw, dt, fields = [], spring = null, peers = []) {
   let next = raw.values ? { ...raw } : refreshFormula(raw)
   if (next.held || next.invalidReason || next.kind === 'invalid') return next
-  const p = next.values ?? {}, mass = Math.max(next.massValue ?? 1, .001), visual = VISUALS[next.law]
+  const p = next.values ?? {}, mass = Math.max(next.massValue ?? 1, .001), visual = visualFor(next)
   if (!next.law && !isMass(next) && !isCharged(next)) return next
   let remaining = Math.max(dt, 0)
   while (remaining > 1e-9) {
@@ -598,7 +737,7 @@ export function stepItem(raw, dt, fields = [], spring = null, peers = []) {
     const extra = { ax: external.ax + linked.ax, ay: external.ay + linked.ay }
     if (spring) { const force = springAcceleration(next, spring); extra.ax += force.ax; extra.ay += force.ay }
     const direction = { x: next.directionX ?? 1, y: next.directionY ?? 0 }
-    const forcePeers = peers.filter(peer => peer.id !== next.id && peer.law !== 'newton' && forceLaws.has(peer.law))
+    const forcePeers = peers.filter(peer => peer.id !== next.id && peer.law !== 'newton' && forceLaws.has(peer.law) && (peer.law !== 'expression' || peer.outputSymbol === 'F'))
     if (visual === 'field' || visual === 'area' || visual === 'volume' || visual === 'hydrostatic') {
       next.phase = next.age; continue
     }
@@ -612,6 +751,22 @@ export function stepItem(raw, dt, fields = [], spring = null, peers = []) {
       // Heating adds internal energy Q=mcΔT. No external translational force.
       next.phase = next.age * Math.sqrt(Math.max(0, 20 + p.T))
       next.thermalAmplitude = Math.sqrt(Math.max(0, 20 + p.T)) * .35
+      continue
+    }
+    if (visual === 'oscillator') {
+      const amplitude = next.oscillatorAmplitude ?? Math.abs(p.A ?? p.x ?? 2)
+      const frequency = next.oscillatorFrequency ?? Math.abs(p.ω ?? p.f ?? 1)
+      const phase = (p.φ ?? 0) + frequency * next.age
+      const displacement = amplitude * Math.sin(phase)
+      const velocity = amplitude * frequency * Math.cos(phase)
+      next.x = next.originX + displacement * PIXELS_PER_UNIT
+      next.y = next.originY
+      next.vx = velocity * PIXELS_PER_UNIT
+      next.vy = 0
+      next.ax = -amplitude * frequency ** 2 * Math.sin(phase) * PIXELS_PER_UNIT
+      next.ay = 0
+      next.wavePhase = phase
+      next.liveValues = { ...p, x: displacement, v: velocity, a: -amplitude * frequency ** 2 * Math.sin(phase), t: next.age }
       continue
     }
     if (visual === 'rotor') {
@@ -633,7 +788,7 @@ export function stepItem(raw, dt, fields = [], spring = null, peers = []) {
       const theta = next.theta ?? .4
       const tangentX = Math.cos(theta), tangentY = -Math.sin(theta)
       // Both pendulum laws are the small-angle model, with T=2π√(L/g).
-      const alpha = -g / length * theta + (extra.ax * tangentX + extra.ay * tangentY) / next.radius
+      const alpha = -g / length * (next.law === 'nonlinearPendulum' ? Math.sin(theta) : theta) + (extra.ax * tangentX + extra.ay * tangentY) / next.radius
       next.omega += alpha * h; next.theta += next.omega * h
       next.x = next.anchorX + Math.sin(next.theta) * next.radius
       next.y = next.anchorY + Math.cos(next.theta) * next.radius
@@ -745,7 +900,7 @@ export function stepItem(raw, dt, fields = [], spring = null, peers = []) {
       if (visual === 'translation') { live.p = mass * signedV; live.E = .5 * mass * v ** 2 }
       if (next.outputSymbol && next.inputSymbols && next.law !== 'escapeSpeed') {
         // Live outputs are evaluated from the same state used by the solver.
-        const model = modelFor(next.law)
+        const model = formulaModel(next)
         if (model?.rules[next.outputSymbol]) live[next.outputSymbol] = model.rules[next.outputSymbol](live)
       }
       next.liveValues = live
@@ -878,5 +1033,6 @@ export function readoutsFor(item) {
   if (item.visual === 'thermal') computed['ΔT'] = item.values.T
   if (item.visual === 'light') computed.λ = 8 / item.values.f
   const keys = [...new Set([output, ...(item.inputSymbols ?? []), ...extras])].filter(Boolean)
-  return keys.filter(key => Number.isFinite(computed[key])).map(key => ({ symbol: key, value: computed[key], adjustable: item.inputSymbols?.includes(key) && key !== 'π' }))
+  const unitLaw = item.law === 'expression' ? item.unitContext : item.law
+  return keys.filter(key => Number.isFinite(computed[key])).map(key => ({ symbol: key, value: computed[key], unit: unitFor(key, unitLaw), adjustable: item.inputSymbols?.includes(key) && key !== 'π' }))
 }
