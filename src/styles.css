@@ -18,6 +18,7 @@ button { font: inherit; color: inherit; }
 .formula { position: absolute; z-index: 2; display: flex; width: max-content; transform: translate(-50%, -50%); font-size: clamp(56px, 10vw, 110px); font-style: italic; font-weight: 400; line-height: 1; letter-spacing: -.035em; white-space: nowrap; cursor: grab; touch-action: none; }
 .formula.invalid { color: #b34a43; }
 .formula.held { z-index: 8; cursor: grabbing; }
+.formula-math sup { font-size: .46em; line-height: 0; vertical-align: .72em; margin-left: .03em; }
 .gravity-formula { display: inline-flex; align-items: center; gap: .06em; }
 .energy-formula { display: inline-flex; align-items: baseline; gap: .02em; }
 .energy-formula sup { font-size: .46em; line-height: 0; vertical-align: .72em; margin-left: .03em; }
