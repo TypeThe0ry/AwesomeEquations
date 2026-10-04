@@ -297,6 +297,7 @@ function App() {
     event.preventDefault()
     event.stopPropagation()
     drag.current = { type: 'parameter', id, symbol, pointerId: event.pointerId, startY: event.clientY, startValue: item.parameters[symbol] }
+    setItems((current) => current.map((candidate) => candidate.id === id ? { ...candidate, adjusting: true, vx: 0, vy: 0 } : candidate))
     if (event.currentTarget.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId)
   }
 
@@ -311,8 +312,13 @@ function App() {
         const height = window.innerHeight
         const floor = height * .83
         const fields = current.filter(isField)
+        const active = drag.current
+        const activeItem = active ? current.find((candidate) => candidate.id === active.id) : null
+        const frozenIds = new Set(active ? [active.id, ...current.filter((candidate) => candidate.attachedTo === active.id).map((candidate) => candidate.id)] : [])
+        if (activeItem?.interactionGroup) current.filter((candidate) => candidate.interactionGroup === activeItem.interactionGroup).forEach((candidate) => frozenIds.add(candidate.id))
         const next = current.map((item) => {
-          if (item.held || (drag.current?.type === 'arrow' && drag.current.id === item.id)) return item
+          // Every adjustment pauses the body, while its values still update.
+          if (item.held || item.adjusting || frozenIds.has(item.id)) return item
           const attachedMass = current.some((other) => other.attachedTo === item.id)
           if (isSpringSource(item) && attachedMass) return { ...item, vx: 0, vy: 0 }
           const spring = current.find((other) => other.id === item.attachedTo && isSpringSource(other))
@@ -328,7 +334,7 @@ function App() {
           }
           return updated
         })
-        return resolveWorldCollisions(next, { width, floor })
+        return resolveWorldCollisions(next, { width, floor, frozenIds: [...frozenIds] })
       })
       frame = requestAnimationFrame(tick)
     }
@@ -468,7 +474,7 @@ function App() {
         const minimum = parameterMinimum(item, active.symbol)
         const maximum = 1000
         const value = clamp(active.startValue + (active.startY - event.clientY) * scale, minimum, maximum)
-        return changeParameter(item, active.symbol, value)
+        return { ...changeParameter(item, active.symbol, value), adjusting: true, vx: 0, vy: 0 }
       }))
       return
     }
@@ -480,14 +486,14 @@ function App() {
         const distance = Math.max(Math.hypot(dx, dy), 1)
         const directionX = dx / distance, directionY = dy / distance
         const edge = Math.abs(directionX) * item.width / 2 + Math.abs(directionY) * item.height / 2 + 18
-        return changeArrow(item, directionX, directionY, clamp(distance - edge, MIN_MAGNITUDE, MAX_MAGNITUDE))
+        return { ...changeArrow(item, directionX, directionY, clamp(distance - edge, MIN_MAGNITUDE, MAX_MAGNITUDE)), adjusting: true, vx: 0, vy: 0 }
       }))
       return
     }
     if (active.type === 'field') {
       setItems((current) => current.map((item) => {
         if (item.id !== active.id) return item
-        return { ...item, fieldScale: clamp(fieldScaleAt(item, event.clientX, event.clientY) / Math.max(fieldAutoScale(item), .01), MIN_FIELD_SCALE, MAX_FIELD_SCALE) }
+        return { ...item, adjusting: true, fieldScale: clamp(fieldScaleAt(item, event.clientX, event.clientY) / Math.max(fieldAutoScale(item), .01), MIN_FIELD_SCALE, MAX_FIELD_SCALE) }
       }))
       return
     }
@@ -498,7 +504,10 @@ function App() {
     const active = drag.current
     if (!active || event.pointerId !== active.pointerId) return
     drag.current = null
-    if (active.type === 'arrow' || active.type === 'field' || active.type === 'parameter') return
+    if (active.type === 'arrow' || active.type === 'field' || active.type === 'parameter') {
+      setItems((current) => current.map((item) => item.id === active.id ? { ...item, adjusting: false } : item))
+      return
+    }
     const bin = trash.current.getBoundingClientRect()
     if (cancelled || (event.clientX > bin.left - 20 && event.clientX < bin.right + 20 && event.clientY > bin.top - 20 && event.clientY < bin.bottom + 20)) {
       remove(active.id)
@@ -559,7 +568,7 @@ function App() {
     setFormulaInputOpen(false)
   }
 
-  return <main className="sandbox" onPointerDown={beginCanvas} onPointerMove={move} onPointerUp={release} onPointerCancel={(event) => release(event, true)}>
+  return <main className="sandbox" onPointerDown={beginCanvas} onPointerMove={move} onPointerUp={release} onPointerCancel={(event) => release(event, true)} onLostPointerCapture={release}>
     <canvas ref={canvas} className="effects" aria-hidden="true" />
     <div className="floor" aria-hidden="true" />
     {items.map((item) => <div key={item.id} className={`formula ${item.held ? 'held' : ''} ${item.kind === 'invalid' || item.invalidReason ? 'invalid' : ''}`} style={{ left: item.x, top: item.y, fontSize: item.fontSize, transform: `translate(-50%, -50%) rotate(${item.rotation ?? 0}rad)` }} data-equation={item.text} data-kind={item.kind} data-visual={item.visual} data-invalid-reason={item.invalidReason} data-output={item.outputSymbol} data-output-value={item.outputValue} data-magnitude={item.magnitude} data-speed={Math.hypot(item.vx, item.vy).toFixed(3)} data-distance={(item.travelled ?? 0).toFixed(3)} data-direction-x={item.directionX} data-direction-y={item.directionY} data-field-scale={isField(item) ? item.fieldScale : undefined} data-interaction-group={item.interactionGroup} data-collision={item.collisionFlash > 0 ? '1' : '0'} onPointerDown={(event) => start(event, null, item.id)} onContextMenu={(event) => removeFormula(event, item.id)}><span className="formula-math">{displayFormula(item, (event, symbol) => beginParameter(event, item.id, symbol))}</span></div>)}
