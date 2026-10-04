@@ -53,6 +53,94 @@ export const isDynamic = (item) => !['letter', 'invalid', 'law', 'gravity', 'cou
 export const isDirectional = (item) => ['newton', 'weight', 'electric', 'momentum', 'kineticEnergy', 'work', 'power', 'wave'].includes(item.kind)
 export const isMass = (item) => item.kind === 'letter' && item.text === 'm'
 export const isCharged = (item) => (isDynamic(item) || item.kind === 'letter') && item.text.includes('q')
+export const isCollidable = (item) => !item.held && !isField(item) && (isDynamic(item) || isMass(item))
+
+export function collisionRadius(item) {
+  const width = item.width ?? 76
+  const height = item.height ?? 76
+  return clamp(Math.max(width * .24, height * .42), 22, 72)
+}
+
+function collisionMass(item) {
+  return isMass(item) ? .8 : clamp(Math.sqrt((item.width ?? 76) / 76), .8, 2.2)
+}
+
+// Resolves formula-to-formula and formula-to-world impacts after each integration step.
+// The visual formulas are treated as soft discs so long equations still have readable contacts.
+export function resolveWorldCollisions(items, { width, floor, restitution = .72 } = {}) {
+  const next = items.map((item) => ({ ...item }))
+  for (const item of next) {
+    if (!isCollidable(item)) continue
+    const radius = collisionRadius(item)
+    const left = item.width / 2
+    const right = width - item.width / 2
+    const top = item.height * .45
+    const bottom = floor - item.height * .18
+    if (item.x < left) {
+      item.x = left
+      if (item.vx < 0) item.vx = -item.vx * restitution
+      item.collisionFlash = .18
+    } else if (item.x > right) {
+      item.x = right
+      if (item.vx > 0) item.vx = -item.vx * restitution
+      item.collisionFlash = .18
+    }
+    if (item.y < top) {
+      item.y = top
+      if (item.vy < 0) item.vy = -item.vy * restitution
+      item.collisionFlash = .18
+    } else if (item.y > bottom) {
+      item.y = bottom
+      if (item.vy > 0) item.vy = -item.vy * restitution
+      item.vx *= .96
+      item.collisionFlash = .18
+    }
+    item.collisionRadius = radius
+  }
+  for (let i = 0; i < next.length; i += 1) {
+    const a = next[i]
+    if (!isCollidable(a)) continue
+    const ra = collisionRadius(a)
+    for (let j = i + 1; j < next.length; j += 1) {
+      const b = next[j]
+      if (!isCollidable(b)) continue
+      const rb = collisionRadius(b)
+      let dx = b.x - a.x
+      let dy = b.y - a.y
+      let distance = Math.hypot(dx, dy)
+      const minimum = ra + rb
+      if (distance >= minimum) continue
+      if (distance < 1e-6) {
+        dx = 1
+        dy = 0
+        distance = 1
+      }
+      const nx = dx / distance
+      const ny = dy / distance
+      const overlap = minimum - distance
+      const massA = collisionMass(a)
+      const massB = collisionMass(b)
+      const inverseA = 1 / massA
+      const inverseB = 1 / massB
+      const inverseTotal = inverseA + inverseB
+      a.x -= nx * overlap * inverseA / inverseTotal
+      a.y -= ny * overlap * inverseA / inverseTotal
+      b.x += nx * overlap * inverseB / inverseTotal
+      b.y += ny * overlap * inverseB / inverseTotal
+      const relativeVelocity = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny
+      if (relativeVelocity < 0) {
+        const impulse = -(1 + restitution) * relativeVelocity / inverseTotal
+        a.vx -= impulse * nx * inverseA
+        a.vy -= impulse * ny * inverseA
+        b.vx += impulse * nx * inverseB
+        b.vy += impulse * ny * inverseB
+      }
+      a.collisionFlash = .18
+      b.collisionFlash = .18
+    }
+  }
+  return next
+}
 
 export function defaultDirection(kind) {
   return kind === 'weight' ? { x: 0, y: 1 } : kind === 'newton' ? { x: -1, y: 0 } : { x: 1, y: 0 }
@@ -218,7 +306,12 @@ export function stepItem(item, dt, fields = [], spring = null) {
 export function changeArrow(item, directionX, directionY, magnitude) {
   const next = { ...item, directionX, directionY, magnitude }
   const speed = Math.max(Math.hypot(item.vx, item.vy), 100)
-  if (item.kind === 'momentum' || item.kind === 'wave' || item.kind === 'kineticEnergy') {
+  if (item.kind === 'work') {
+    // Re-aiming the work arrow starts a fresh displacement run with the new force.
+    next.travelled = 0
+    next.vx = 0
+    next.vy = 0
+  } else if (item.kind === 'momentum' || item.kind === 'wave' || item.kind === 'kineticEnergy') {
     const newSpeed = item.kind === 'kineticEnergy' ? Math.sqrt(200 * magnitude) : magnitude * 1.6
     next.vx = directionX * newSpeed
     next.vy = directionY * newSpeed
